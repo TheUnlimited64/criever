@@ -1,0 +1,11 @@
+{
+  "name": "criever",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "test": "bun run --filter '*' test",
+    "build": "bun run --filter @criever/web build && bun run scripts/embed-web.ts && bun run --filter @criever/cli build",
+    "dev:cli": "bun run --filter @criever/cli dev",
+    "dev:web": "bun run --filter @criever/web dev"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@criever/cli", "version": "0.0.0", "type": "module",
+  "bin": { "criever": "src/main.ts" },
+  "scripts": {
+    "dev": "bun run src/main.ts",
+    "test": "bunx --bun vitest run",
+    "typecheck": "tsc --noEmit",
+    "build": "bun build --compile --minify src/main.ts --outfile ../../dist/criever"
+  },
+  "dependencies": { "@criever/shared": "workspace:*" },
+  "devDependencies": { "vitest": "^3.2.0", "bun-types": "latest", "typescript": "^5.6.0" }
+}

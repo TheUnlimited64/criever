@@ -1,0 +1,12 @@
+node_modules
+dist
+packages/cli/src/web-assets.ts
+packages/web/e2e/screens/*.png
+packages/web/test-results
+packages/web/playwright-report
+.superpowers/
+.playwright-mcp/
+.omo/
+# a local review (`criever --local`) is scratch by default; committing one to
+# hand a review to someone else is a deliberate opt-in — see README.
+.criever/

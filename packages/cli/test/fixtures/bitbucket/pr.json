@@ -1,0 +1,11 @@
+{ "values": [
+  { "id": 241, "title": "feat(catalog): virtualize item list", "created_on": "2026-09-01T09:00:00Z",
+    "author": { "display_name": "Sam Rivera", "uuid": "{colleague}" },
+    "links": { "html": { "href": "https://bitbucket.org/sample-workspace/review-fixture/pull-requests/241" } },
+    "source": { "branch": { "name": "feat/virtual-list-review" }, "commit": { "hash": "c0ffee1" } },
+    "destination": { "branch": { "name": "main" }, "commit": { "hash": "c0ffee0" } } },
+  { "id": 240, "title": "older synthetic review", "created_on": "2026-08-01T09:00:00Z",
+    "author": { "display_name": "X", "uuid": "{x}" }, "links": { "html": { "href": "u" } },
+    "source": { "branch": { "name": "feat/virtual-list-review" }, "commit": { "hash": "0000000" } },
+    "destination": { "branch": { "name": "main" }, "commit": { "hash": "c0ffee0" } } }
+] }

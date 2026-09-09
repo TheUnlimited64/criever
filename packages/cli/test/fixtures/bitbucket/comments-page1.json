@@ -1,0 +1,10 @@
+{ "next": "https://api.bitbucket.org/2.0/repositories/sample-workspace/review-fixture/pullrequests/241/comments?page=2",
+  "values": [
+  { "id": 301, "created_on": "2026-09-03T10:00:00Z", "deleted": false,
+    "user": { "display_name": "Alex Morgan", "uuid": "{me}" },
+    "content": { "raw": "Use the windowed rows here instead of mapping the full collection." },
+    "inline": { "path": "src/devices/DeviceList.tsx", "from": null, "to": 40 } },
+  { "id": 302, "created_on": "2026-09-04T10:00:00Z", "deleted": false, "parent": { "id": 301 },
+    "user": { "display_name": "Sam Rivera", "uuid": "{colleague}" },
+    "content": { "raw": "Done in c0ffee1." } }
+] }
