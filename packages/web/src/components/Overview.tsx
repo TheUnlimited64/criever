@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { usePr } from '../hooks';
+import { usePr, useRangeHasLocalOnly } from '../hooks';
 import { useStore } from '../store';
 import { flavorForProviderKind, renderMarkdown } from './markdown';
 import { Overlay } from './Overlay';
@@ -14,6 +14,7 @@ const day = (iso: string) => { const d = new Date(iso); return isNaN(+d) ? '' : 
 export function Overview() {
   const pr = usePr().data;
   const { range, setRange, setOverlay } = useStore();
+  const localOnlyInScope = useRangeHasLocalOnly();
   // The commit a shift-click measures its range from. Local, not derived: the range alone can't say
   // which end you clicked first, and that's what decides which way a shift-click extends.
   const [anchor, setAnchor] = useState<number | null>(null);
@@ -74,11 +75,11 @@ export function Overview() {
             <div className="ov-commits" data-testid="overview/commits">
               {commits.map((c, i) => (
                 <button key={c.hash} className={`ov-commit${inRange(i) ? ' on' : ''}`} data-testid={`overview/commit/${short(c.hash)}`}
-                  title={`${c.message}\n\n${c.hash}`} onClick={e => pick(i, e.shiftKey)}>
-                  <span className="ov-dot" />
-                  <span className="ov-msg">{c.message.split('\n')[0]}</span>
-                  <span className="ov-hash mono">{short(c.hash)}</span>
-                  <span className="ov-date">{day(c.date)}</span>
+                   title={`${c.message}\n\n${c.hash}`} onClick={e => pick(i, e.shiftKey)}>
+                   <span className="ov-dot" />
+                  <span className="ov-msg">{c.localOnly === true && <span className="chip amber" data-testid={`overview/commit/${short(c.hash)}/localOnly`}>local-only</span>} {c.message.split('\n')[0]}</span>
+                   <span className="ov-hash mono">{short(c.hash)}</span>
+                   <span className="ov-date">{day(c.date)}</span>
                 </button>
               ))}
               {commits.length === 0 && <p className="ov-none">No commits in this range.</p>}
@@ -89,8 +90,10 @@ export function Overview() {
         <div className="sheet-ft">
           <span className="grow" data-testid="overview/status">
             {range
-              ? <>Reviewing <code>{short(range.base)}..{short(range.head)}</code>{readOnly && <> · read-only, comments stay anchored to the review head</>}</>
-              : <>Click a commit to review it alone · shift-click a second for a range</>}
+              ? <>Reviewing <code>{short(range.base)}..{short(range.head)}</code>{readOnly && <> · read-only, comments stay anchored to the review head</>}{localOnlyInScope && <> · local-only work included</>}</>
+              : localOnlyInScope
+                ? <>Whole review · local-only work included (not pushed) · click a commit to review it alone · shift-click a second for a range</>
+                : <>Click a commit to review it alone · shift-click a second for a range</>}
           </span>
           <button className="btn" data-testid="overview/done" onClick={close}>Done</button>
         </div>
