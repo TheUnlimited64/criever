@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { BitbucketClient, BitbucketError } from './bitbucket';
+import { snapshotBitbucketReview } from './bitbucket-review';
 import { defaultPaths, loadCredentials } from './config';
 import { UserError } from './errors';
 import { Git } from './git';
@@ -58,8 +59,10 @@ export async function startup(opts: { cwd: string; env: Env; fetch?: typeof fetc
   opts.log(`PR #${pr.id}: ${pr.title}`);
 
   await git.fetch(remote, [pr.source.branch.name, pr.destination.branch.name]);
-  const mergeBase = await git.mergeBase(pr.destination.commit.hash, pr.source.commit.hash);
-  const [comments, commits] = await Promise.all([bb.listComments(ws, repo, pr.id), bb.listCommits(ws, repo, pr.id)]);
+  const remoteMeta = rawPrToMeta(pr);
+  const [comments, remoteCommits] = await Promise.all([bb.listComments(ws, repo, pr.id), bb.listCommits(ws, repo, pr.id)]);
+  const review = await snapshotBitbucketReview(git, remoteMeta, remoteCommits);
+  const mergeBase = await git.mergeBase(review.meta.destinationHead, review.meta.sourceHead);
   const store = new StateStore(StateStore.path(paths.stateDir, ws, repo, pr.id)); await store.load();
   if (store.warning) opts.log(store.warning);
 
@@ -70,7 +73,7 @@ export async function startup(opts: { cwd: string; env: Env; fetch?: typeof fetc
   await carryOverLocalComments(localReview, store, pr.id);
 
   const provider = new BitbucketProvider(bb, ws, repo, pr.id);
-  return { git, store, provider, ws, repo, meta: rawPrToMeta(pr), mergeBase, comments, commits, remote, localReview };
+  return { git, store, provider, ws, repo, meta: review.meta, mergeBase, comments, commits: review.commits, remote, localReview };
 }
 
 /**

@@ -1,4 +1,4 @@
-import { useComments, usePr, useInvalidate, useRangeReadOnly } from '../hooks';
+import { useComments, usePr, useInvalidate, useRangeHasLocalOnly, useRangeReadOnly } from '../hooks';
 import { api } from '../api';
 import { useStore } from '../store';
 
@@ -6,6 +6,7 @@ export function Header() {
   const pr = usePr().data; const drafts = useComments().data?.drafts.length ?? 0;
   const { setOverlay, range, setRange } = useStore(); const invalidate = useInvalidate();
   const readOnly = useRangeReadOnly();
+  const localOnlyInScope = useRangeHasLocalOnly();
   if (!pr) return <header className="hdr" data-testid="header" />;
   const local = pr.kind === 'local';
   const newCommits = !local && pr.lastSeenHead && pr.lastSeenHead !== pr.sourceHead ? pr.commits.findIndex(c => c.hash === pr.lastSeenHead) : 0;
@@ -21,7 +22,9 @@ export function Header() {
         <button className="title-btn" data-testid="header/overviewButton" onClick={() => setOverlay('overview')}>
           <span className="title" data-testid="header/title">{pr.title}</span>
         </button>
-        {range && <span className="chip blue" data-testid="header/rangeChip">{range.base.slice(0, 7)}..{range.head.slice(0, 7)}{readOnly ? ' · read-only' : ''}<button data-testid="header/rangeChip/clear" title="Back to the whole review" onClick={() => setRange(null)}>✕</button></span>}
+        {range
+          ? <span className="chip blue" data-testid="header/rangeChip">{range.base.slice(0, 7)}..{range.head.slice(0, 7)}{readOnly ? ' · read-only' : ''}{localOnlyInScope ? ' · local-only' : ''}<button data-testid="header/rangeChip/clear" title="Back to the whole review" onClick={() => setRange(null)}>✕</button></span>
+          : localOnlyInScope && <span className="chip amber" data-testid="header/localOnly" title="Local-only work is included in this review">local-only</span>}
         {!local && newCommits > 0 && (
           <span className="banner" data-testid="header/newCommitsBanner">▲ {newCommits} new commit{newCommits > 1 ? 's' : ''} since your last visit
             <button data-testid="header/newCommitsBanner/showDiff" onClick={() => setRange({ base: pr.lastSeenHead!, head: pr.sourceHead })}>show diff</button>

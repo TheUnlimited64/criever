@@ -5,7 +5,8 @@ export function inferAnchor(c: BbComment, commits: PrCommit[]): Anchor | null {
   if (!c.inline) return null;
   const side = c.inline.to == null && c.inline.from != null ? 'old' : 'new';
   const line = side === 'old' ? c.inline.from! : (c.inline.to ?? c.inline.from ?? 1);
-  const sorted = [...commits].sort((a, b) => a.date.localeCompare(b.date)); // oldest first
+  const sorted = commits.filter(commit => commit.localOnly !== true).sort((a, b) => a.date.localeCompare(b.date)); // oldest first
+  if (sorted.length === 0) return null;
   const older = sorted.filter(k => k.date < c.createdOn);
   const anchorCommit = (older.at(-1) ?? sorted[0])?.hash ?? '';
   return { path: c.inline.path, line, side, anchorCommit, source: 'inferred' };

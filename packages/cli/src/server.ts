@@ -1,5 +1,5 @@
 import { join, extname } from 'node:path';
-import type { BbComment, ChangedFile, CommentsResponse, DiffResponse, PrCommit, PrInfo, ReviewMeta, Side } from '@criever/shared';
+import type { BbComment, ChangedFile, CommentsResponse, DiffResponse, Draft, PrCommit, PrInfo, ReviewMeta, Side } from '@criever/shared';
 import type { Provider } from './provider';
 import type { Git } from './git';
 import type { LocalReviewStore } from './localreview';
@@ -7,6 +7,7 @@ import type { StateStore } from './state';
 import { buildThreads } from './threads';
 import { publishDrafts } from './publish';
 import { UserError } from './errors';
+import { snapshotBitbucketReview } from './bitbucket-review';
 
 export interface ServerDeps {
   git: Git; store: StateStore; provider: Provider;
@@ -25,6 +26,12 @@ const err = (message: string, status: number) => json({ error: message }, status
 
 export function createHandler(d: ServerDeps) {
   const head = () => d.meta.sourceHead;
+  const draftAnchor = async (path: string): Promise<string> => {
+    const effectiveHead = head();
+    if (d.provider.kind !== 'bitbucket') return effectiveHead;
+    const remoteHead = d.meta.remoteSourceHead ?? effectiveHead;
+    return await d.git.isUnchanged(remoteHead, effectiveHead, path) ? remoteHead : effectiveHead;
+  };
 
   const hunksFor = async (anchorCommit: string, path: string) => {
     const f = await d.git.diffFile(anchorCommit, head(), path, 0);
@@ -68,7 +75,7 @@ export function createHandler(d: ServerDeps) {
     return {
       id: d.meta.id, title: d.meta.title, url: d.meta.url, author: d.meta.author, description: d.meta.description, kind: d.provider.kind,
       sourceBranch: d.meta.sourceBranch, destinationBranch: d.meta.destinationBranch,
-      sourceHead: head(), destinationHead: d.meta.destinationHead, mergeBase: d.mergeBase,
+      sourceHead: head(), remoteSourceHead: d.meta.remoteSourceHead ?? head(), destinationHead: d.meta.destinationHead, mergeBase: d.mergeBase,
       commits: d.commits, lastSeenHead: d.store.state.lastSeenHead ?? null,
       localBehind: await d.git.revListCount(localHead, head()), stateWarning: d.store.warning,
     };
@@ -123,7 +130,7 @@ export function createHandler(d: ServerDeps) {
       if (req.method === 'POST' && p === '/api/drafts') {
         const b = await body<{ path: string; line: number; side: Side; body: string; parentId?: number }>();
         if (!b.path || !b.line || !b.side || typeof b.body !== 'string') return err('path, line, side, body required', 400);
-        return json(await d.store.addDraft({ path: b.path, line: b.line, side: b.side, body: b.body, anchorCommit: head(), ...(b.parentId != null ? { parentId: b.parentId } : {}) }));
+        return json(await d.store.addDraft({ path: b.path, line: b.line, side: b.side, body: b.body, anchorCommit: await draftAnchor(b.path), ...(b.parentId != null ? { parentId: b.parentId } : {}) }));
       }
       const draftM = /^\/api\/drafts\/([^/]+)$/.exec(p);
       if (draftM && req.method === 'PATCH') { const r = await d.store.updateDraft(draftM[1]!, (await body<{ body: string }>()).body); return r ? json(r) : err('draft not found', 404); }
@@ -133,7 +140,14 @@ export function createHandler(d: ServerDeps) {
         // Snapshotted before the generator removes drafts as it publishes them, so a successful
         // result can still be traced back to the local comment it was carried over from.
         const sourceLocalIds = new Map(d.store.state.drafts.map(dr => [dr.id, dr.sourceLocalId] as const));
-        const gen = publishDrafts(d.store, dr => d.provider.publishComment({ raw: dr.body, path: dr.path, line: dr.line, side: dr.side, parentId: dr.parentId }));
+        const eligibility = d.provider.kind === 'bitbucket'
+          ? async (dr: Draft) => {
+            const remoteHead = d.meta.remoteSourceHead ?? d.meta.sourceHead;
+            if (await d.git.isAncestor(dr.anchorCommit, remoteHead)) return null;
+            return `Draft is pending until anchor commit ${dr.anchorCommit.slice(0, 7)} is present at remote source head ${remoteHead.slice(0, 7)}.`;
+          }
+          : undefined;
+        const gen = publishDrafts(d.store, dr => d.provider.publishComment({ raw: dr.body, path: dr.path, line: dr.line, side: dr.side, parentId: dr.parentId }), eligibility);
         const stream = new ReadableStream({
           async start(ctrl) {
             for await (const r of gen) {
@@ -160,10 +174,19 @@ export function createHandler(d: ServerDeps) {
       }
       if (req.method === 'POST' && p === '/api/seen') { await d.store.setLastSeenHead(head()); return json({ ok: true }); }
       if (req.method === 'POST' && p === '/api/refresh') {
-        d.meta = await d.provider.meta();
-        await d.git.fetch(d.remote, [d.meta.sourceBranch, d.meta.destinationBranch]).catch(() => {});
+        const remoteMeta = await d.provider.meta();
+        await d.git.fetch(d.remote, [remoteMeta.sourceBranch, remoteMeta.destinationBranch]).catch(() => {});
+        const [comments, remoteCommits] = await Promise.all([d.provider.listComments(), d.provider.listCommits()]);
+        if (d.provider.kind === 'bitbucket') {
+          const review = await snapshotBitbucketReview(d.git, remoteMeta, remoteCommits);
+          d.meta = review.meta;
+          d.commits = review.commits;
+        } else {
+          d.meta = remoteMeta;
+          d.commits = remoteCommits;
+        }
+        d.comments = comments;
         d.mergeBase = await d.git.mergeBase(d.meta.destinationHead, head());
-        [d.comments, d.commits] = await Promise.all([d.provider.listComments(), d.provider.listCommits()]);
         return json({ ok: true });
       }
       if (req.method === 'POST' && p === '/api/vscode/open') {

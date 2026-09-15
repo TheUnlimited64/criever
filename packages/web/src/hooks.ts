@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { PrInfo } from '@criever/shared';
 import { api } from './api';
-import { useStore } from './store';
+import { useStore, type Range } from './store';
 export const usePr = () => useQuery({ queryKey: ['pr'], queryFn: api.pr });
 export const useFiles = () => {
   const r = useStore(s => s.range);
@@ -9,6 +10,17 @@ export const useFiles = () => {
 /** Comment anchors are computed against the review's head, so they only line up while the range
  *  ends there. Browsing an older commit is read-only rather than showing cards on wrong lines. */
 export const useRangeReadOnly = () => { const pr = usePr().data; const range = useStore(s => s.range); return !!range && !!pr && range.head !== pr.sourceHead; };
+export const useRangeHasLocalOnly = () => {
+  const pr = usePr().data; const range = useStore(s => s.range);
+  if (!pr) return false;
+  if (!range) return pr.commits.some(commit => commit.localOnly === true);
+  return rangeContainsLocalOnly(pr, range);
+};
+const rangeContainsLocalOnly = (pr: PrInfo, range: Range) => {
+  const start = pr.commits.findIndex(commit => commit.hash === range.head);
+  const end = pr.commits.findIndex((_, index) => (pr.commits[index + 1]?.hash ?? pr.mergeBase) === range.base);
+  return start >= 0 && end >= start && pr.commits.slice(start, end + 1).some(commit => commit.localOnly === true);
+};
 export const useComments = () => {
   const local = usePr().data?.kind === 'local';
   // Polling is the lazy correct choice at this scale while a local review is open (a

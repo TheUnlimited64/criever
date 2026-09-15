@@ -52,6 +52,13 @@ export class Git {
     return (await this.run(['merge-base', a, b])).stdout.trim();
   }
 
+  async isAncestor(ancestor: string, descendant: string): Promise<boolean> {
+    const r = await this.run(['merge-base', '--is-ancestor', ancestor, descendant], { allowFail: true });
+    if (r.code === 0) return true;
+    if (r.code === 1) return false;
+    throw new Error(`git merge-base --is-ancestor ${ancestor} ${descendant} failed (${r.code}):\n${r.stderr.trim()}`);
+  }
+
   async changedFiles(base: string, head: string): Promise<FileDiff[]> {
     // Full diff parsed once for counts + statuses; fine up to tens of MB. Switch to --numstat if it ever hurts.
     const r = await this.run(['diff', '-M', '--no-color', '--no-ext-diff', '-U0', base, head]);

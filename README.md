@@ -87,6 +87,12 @@ newest N commits — keeps comments and the composer fully live, and a range tha
 **read-only**: the header chip says so, comment cards are hidden rather than drawn at lines they
 don't belong to, and the gutter won't start a new comment. Clear the range to comment again.
 
+When checked-out `HEAD` has committed descendants of Bitbucket's remote source head, Criever uses
+`HEAD` as the effective local review head. The whole review and commit/range selections include
+those descendants, and the overview marks the affected commits and ranges **local-only** and **not
+pushed**. Uncommitted working-tree changes are excluded. Divergent or behind checkouts stay
+remote-backed, and `--local` reviews are unchanged.
+
 ## Local reviews and the agent loop
 
 criever also runs with no PR, no provider account, and no network:
@@ -207,7 +213,7 @@ Tests: `bun run test` (per-package Vitest) and Playwright e2e in `packages/web/e
 | 401 / 403 | Your `ATLASSIAN_API_TOKEN` / `ATLASSIAN_USER_EMAIL` are wrong or missing, or the config file at the printed path is wrong. |
 | 429 | criever waits once for the `Retry-After` period, then fails with a message if Bitbucket is still rate-limiting. |
 | git fetch failed | git's own stderr is printed verbatim; fix whatever git is complaining about (network, auth, ref). |
-| Publish partial failure | The publish sheet stays open; the failed row is red with the API's message, earlier rows already published, later rows remain drafts. Fix and retry. |
+| Publish partial failure | The publish sheet stays open; the failed row is red with the API's message. In a mixed batch, eligible remote-backed drafts still publish, while drafts on local-only lines stay pending and aren't sent. Once Bitbucket contains an anchor commit, refresh or reopen the review and the retained draft becomes eligible for the next publish. Rows after an actual failed publish remain drafts. |
 | Resolve failed | The optimistic UI change is rolled back and a toast shows the error. |
 | State file corrupt | It's renamed to `.bak`, criever starts with empty state for that PR, and a warning banner explains it. |
 | VS Code download failed | A toast shows the download URL and cache path; fetch the tarball manually into that path if your network blocks GitHub releases. |

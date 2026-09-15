@@ -23,7 +23,7 @@ export function rawPrToMeta(pr: RawPr): ReviewMeta {
   return {
     id: pr.id, title: pr.title, url: pr.links.html.href, author: pr.author.display_name,
     description: pr.description?.trim() || null,
-    sourceBranch: pr.source.branch.name, sourceHead: pr.source.commit.hash,
+    sourceBranch: pr.source.branch.name, sourceHead: pr.source.commit.hash, remoteSourceHead: pr.source.commit.hash,
     destinationBranch: pr.destination.branch.name, destinationHead: pr.destination.commit.hash,
   };
 }

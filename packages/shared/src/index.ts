@@ -55,12 +55,12 @@ export interface LocalReview {
   nextId: number;
 }
 
-export interface PrCommit { hash: string; date: string; message: string }
+export interface PrCommit { hash: string; date: string; message: string; localOnly?: boolean }
 export interface PrInfo {
   id: number; title: string; url: string | null; author: string; description: string | null;
   kind: 'bitbucket' | 'local';
   sourceBranch: string; destinationBranch: string;
-  sourceHead: string; destinationHead: string; mergeBase: string;
+  sourceHead: string; remoteSourceHead: string; destinationHead: string; mergeBase: string;
   commits: PrCommit[];
   lastSeenHead: string | null;
   localBehind: number;
@@ -71,7 +71,7 @@ export interface PrInfo {
 // knowing whether it came from Bitbucket's RawPr or a local review file.
 export interface ReviewMeta {
   id: number; title: string; url: string | null; author: string; description: string | null;
-  sourceBranch: string; sourceHead: string;
+  sourceBranch: string; sourceHead: string; remoteSourceHead?: string;
   destinationBranch: string; destinationHead: string;
 }
 
@@ -94,7 +94,7 @@ export interface ChangedFile {
 }
 export interface TreeEntry { path: string }
 export interface SearchHit { path: string; line: number; text: string }
-export interface PublishResult { draftId: string; ok: boolean; commentId?: number; error?: string }
+export interface PublishResult { draftId: string; ok: boolean; commentId?: number; pending?: boolean; error?: string }
 export interface CommentsResponse { threads: Thread[]; drafts: Draft[] }
 export interface DiffResponse { file: FileDiff | null; base: string; head: string; context: number }
 export interface VscodeOpenResponse { url: string }
