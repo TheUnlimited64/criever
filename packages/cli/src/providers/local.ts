@@ -33,7 +33,7 @@ export class LocalProvider implements Provider {
     return {
       // A local review has no PR id; 0 is stable across calls, which is all "synthetic id" needs to mean here.
       id: 0, title: `local review · ${baseHead.slice(0, 7)}..${headHead.slice(0, 7)}`, url: null, author: 'you', description: null,
-      sourceBranch: this.branch, sourceHead: headHead, destinationBranch: this.base, destinationHead: baseHead,
+      sourceBranch: this.branch, sourceHead: headHead, remoteSourceHead: headHead, destinationBranch: this.base, destinationHead: baseHead,
     };
   }
 
