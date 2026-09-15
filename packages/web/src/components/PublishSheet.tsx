@@ -18,6 +18,7 @@ export function PublishSheet() {
     if (!failed) { showToast(`Published ${ok} comment${ok === 1 ? '' : 's'}`); setOverlay(null); }
   };
   const sorted = rows ?? [...drafts].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const pendingResults = Object.values(results).filter(r => r.pending === true);
   return (
     <Overlay onClose={close}>
       <div data-testid="publishSheet">
@@ -25,14 +26,15 @@ export function PublishSheet() {
         <div className="sheet-list">
           {sorted.length === 0 && <div className="sheet-row"><div>Nothing to publish.</div></div>}
           {sorted.map(d => { const r = results[d.id]; return (
-            <div key={d.id} className={`sheet-row ${r ? (r.ok ? 'ok' : 'failed') : ''}`} data-testid={`publishSheet/row/${d.id}`}>
+            <div key={d.id} className={`sheet-row ${r ? (r.ok ? 'ok' : r.pending ? 'pending' : 'failed') : ''}`} data-testid={`publishSheet/row/${d.id}`}>
               <div><div className="loc">{d.path}:{d.line} · {d.side} side{d.parentId ? ` · reply to #${d.parentId}` : ''}</div>{d.body.split('\n')[0]}
-                {r && !r.ok && <div className="chip amber" data-testid={`publishSheet/row/${d.id}/error`}>{r.error}</div>}</div>
+                {r?.pending && <div className="chip amber" data-testid={`publishSheet/row/${d.id}/pending`}>pending · not published{r.error ? ` — ${r.error}` : ''}</div>}
+                {r && !r.ok && !r.pending && <div className="chip amber" data-testid={`publishSheet/row/${d.id}/error`}>{r.error}</div>}</div>
               {!r && !busy && <button className="btn sm ghost" data-testid={`publishSheet/row/${d.id}/remove`} onClick={async () => { await api.deleteDraft(d.id); invalidate(); }}>remove</button>}
               {r?.ok && <span className="chip grey">published</span>}
             </div>); })}
         </div>
-        <div className="sheet-ft"><span className="grow">Anchored to {pr?.sourceHead.slice(0, 7)}. If one fails, the rest stay drafts.</span>
+        <div className="sheet-ft"><span className="grow" data-testid="publishSheet/pendingNotice">{pendingResults.length > 0 ? `${pendingResults.length} local-only draft${pendingResults.length === 1 ? '' : 's'} ${pendingResults.length === 1 ? 'stays' : 'stay'} pending until the remote source head includes the anchor commit.` : `Anchored to ${pr?.sourceHead.slice(0, 7)}. If one fails, the rest stay drafts.`}</span>
           <button className="btn" data-testid="publishSheet/cancel" onClick={close}>{Object.keys(results).length ? 'Close' : 'Cancel'}</button>
           <button className="btn primary" data-testid="publishSheet/confirm" disabled={busy || sorted.length === 0 || Object.keys(results).length > 0} onClick={publish}>{busy ? 'Publishing…' : 'Publish'}</button></div>
       </div>
