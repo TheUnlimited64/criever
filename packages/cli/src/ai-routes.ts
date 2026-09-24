@@ -7,7 +7,7 @@ interface AiRouteDeps { readonly adapter: AiRunner; readonly store: StateStore; 
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
 
 export async function aiEndpoint(req: Request, path: string, deps: AiRouteDeps): Promise<Response | null> {
-  if (req.method === 'GET' && path === '/api/ai') return json({ harnesses: deps.adapter.list(), conversation: await deps.store.loadAiConversation(), threads: await deps.store.loadAiThreads(), findings: await deps.store.loadAiFindings(), lookouts: await deps.store.loadAiLookouts(), approvedIds: deps.store.state.approvedAiFindings ?? [] });
+  if (req.method === 'GET' && path === '/api/ai') return json({ harnesses: deps.adapter.list(), conversation: await deps.store.loadAiConversation(), threads: await deps.store.loadAiThreads(), findings: await deps.store.loadAiFindings(), lookouts: await deps.store.loadAiLookouts(), reviewResult: deps.store.state.aiReviewResult ?? null, approvedIds: deps.store.state.approvedAiFindings ?? [] });
   const approval = /^\/api\/ai\/findings\/([^/]+)\/approve$/.exec(path);
   if (req.method === 'POST' && approval) {
     const draft = await deps.store.approveAiFinding(decodeURIComponent(approval[1] ?? ''), deps.meta.sourceHead);
@@ -75,6 +75,9 @@ async function postAi(req: Request, path: string, deps: AiRouteDeps): Promise<Re
   }
   await deps.store.saveAiFindings(findings);
   await deps.store.saveAiLookouts(lookouts);
+  const first = findings[0] ?? lookouts.find(item => item.path && item.side && item.line) ?? null;
+  deps.store.state.aiReviewResult = { head: deps.meta.sourceHead, findings: findings.length, lookouts: lookouts.length, first: first?.path && first.side && first.line ? { path: first.path, side: first.side, line: first.line } : null };
+  await deps.store.save();
   return json({ findings, lookouts });
 }
 
