@@ -17,6 +17,7 @@ interface S {
   context: number; setContext: (n: number) => void;
   overlay: Overlay; setOverlay: (o: Overlay) => void;
   aiOpen: boolean; setAiOpen: (open: boolean) => void;
+  aiJump: { path: string; side: Side; line: number } | null; setAiJump: (target: { path: string; side: Side; line: number } | null) => void;
   selectedHarnessId: string; setSelectedHarnessId: (id: string) => void;
   composer: ComposerTarget | null; setComposer: (c: ComposerTarget | null) => void;
   selection: { side: Side; from: number; to: number } | null; setSelection: (sel: { side: Side; from: number; to: number } | null) => void;
@@ -36,6 +37,7 @@ export const useStore = create<S>((set) => ({
   context: 3, setContext: n => set({ context: n }),
   overlay: null, setOverlay: o => set({ overlay: o }),
   aiOpen: false, setAiOpen: aiOpen => set({ aiOpen }),
+  aiJump: null, setAiJump: aiJump => set({ aiJump }),
   selectedHarnessId: '', setSelectedHarnessId: selectedHarnessId => set({ selectedHarnessId }),
   composer: null, setComposer: c => set({ composer: c }),
   selection: null, setSelection: sel => set({ selection: sel }),
