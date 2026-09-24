@@ -10,18 +10,18 @@ export interface AiReviewResult { readonly findings: readonly AiFindingCandidate
 
 export interface AiRunner {
   list(): readonly Pick<Harness, 'id' | 'name' | 'kind'>[];
-  run(id: string, prompt: string): Promise<string>;
+  run(id: string, prompt: string, mode?: 'chat' | 'patch'): Promise<string>;
 }
 
 export class AiAdapter implements AiRunner {
   constructor(private readonly harnesses: readonly Harness[], private readonly git: Git) {}
   list(): readonly Pick<Harness, 'id' | 'name' | 'kind'>[] { return this.harnesses.map(({ id, name, kind }) => ({ id, name, kind })); }
 
-  async run(id: string, prompt: string): Promise<string> {
+  async run(id: string, prompt: string, mode: 'chat' | 'patch' = 'chat'): Promise<string> {
     const harness = this.harnesses.find(item => item.id === id);
     if (!harness) throw new Error(`Unknown AI harness: ${id}`);
     if (Buffer.byteLength(prompt, 'utf8') > INPUT_LIMIT) throw new Error('AI input exceeded limit');
-    const proc = Bun.spawn([harness.executable ?? defaultExecutable(harness.kind), ...commandArgs(harness.kind)], {
+    const proc = Bun.spawn([harness.executable ?? defaultExecutable(harness.kind), ...commandArgs(harness.kind, mode)], {
       cwd: this.git.root, stdout: 'pipe', stderr: 'pipe', stdin: new Blob([prompt]), env: process.env,
     });
     let timedOut = false;
@@ -64,10 +64,10 @@ function defaultExecutable(kind: HarnessKind): string {
   }
 }
 
-function commandArgs(kind: HarnessKind): string[] {
+function commandArgs(kind: HarnessKind, mode: 'chat' | 'patch'): string[] {
   switch (kind) {
     case 'claude': return ['-p', '--output-format', 'text', '--permission-mode', 'plan'];
-    case 'codex': return ['exec', '--sandbox', 'read-only', '--json', '-'];
+    case 'codex': return ['exec', '--sandbox', 'read-only', '--json', ...(mode === 'patch' ? ['-c', 'features.plugins=false', '--disable', 'multi_agent'] : []), '-'];
     case 'opencode': return ['run', '--format', 'json'];
     default: return assertNever(kind);
   }
@@ -87,7 +87,26 @@ export function parseHarnessOutput(kind: HarnessKind, raw: string): string {
 }
 
 export function parseReviewResult(raw: string): AiReviewResult {
-  const value: unknown = JSON.parse(raw);
+  let value: unknown;
+  try { value = JSON.parse(raw); }
+  catch (cause) {
+    if (!(cause instanceof SyntaxError)) throw cause;
+    let start = -1, depth = 0, quoted = false, escaped = false;
+    for (let index = 0; index < raw.length; index++) {
+      const character = raw[index];
+      if (escaped) { escaped = false; continue; }
+      if (quoted && character === '\\') { escaped = true; continue; }
+      if (character === '"') { quoted = !quoted; continue; }
+      if (quoted) continue;
+      if (character === '{') { if (depth === 0) start = index; depth++; }
+      if (character === '}' && depth > 0 && --depth === 0 && start >= 0) {
+        try {
+          const candidate: unknown = JSON.parse(raw.slice(start, index + 1));
+          if (typeof candidate === 'object' && candidate !== null && 'findings' in candidate && 'lookouts' in candidate) value = candidate;
+        } catch (error) { if (!(error instanceof SyntaxError)) throw error; }
+      }
+    }
+  }
   if (typeof value !== 'object' || value === null || !('findings' in value) || !Array.isArray(value.findings) || !('lookouts' in value) || !Array.isArray(value.lookouts)) throw new Error('AI review must contain findings and lookouts arrays');
   const findings = parseFindings(JSON.stringify(value.findings));
   const lookouts = value.lookouts.map((item: unknown): AiReviewResult['lookouts'][number] => {
