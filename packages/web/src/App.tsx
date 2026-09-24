@@ -72,7 +72,8 @@ export function App({ headerContext }: { headerContext?: ReviewHeaderContext }) 
       <div className={`main${aiOpen ? ' ai-open' : ''}`}>
         <FilesPane />
         <ReviewCodePane />
-        {aiOpen ? <AiRail /> : <CommentsRail />}
+        <div className="rail-slot" hidden={aiOpen}><CommentsRail /></div>
+        <div className="rail-slot" hidden={!aiOpen}><AiRail /></div>
       </div>
       <Footer />
       <Toast />
