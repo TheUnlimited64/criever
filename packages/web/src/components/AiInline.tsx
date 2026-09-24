@@ -3,7 +3,9 @@ import type { AiFinding, AiLookout, AiMessage, Side } from '@criever/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { useStore } from '../store';
+import { usePr } from '../hooks';
 import { AiActivity } from './AiActivity';
+import { AiMessageView } from './AiMessageView';
 
 interface AiAnchor { readonly path: string; readonly line: number; readonly side: Side }
 type AiQuestionTarget = AiAnchor | { readonly path: string };
@@ -43,13 +45,21 @@ export function AiLookoutCard({ lookout }: { lookout: AiLookout }) {
 }
 
 export function AiThreadCard({ threadId, messages }: { threadId: string; messages: readonly AiMessage[] }) {
+  const pr = usePr().data;
+  const anchor = threadAnchor(threadId);
+  const file = threadId.match(/^file:(.*):[a-f\d]+$/)?.[1];
+  const target = anchor ?? (file ? { path: decodeURIComponent(file) } : null);
+  const revision = threadId.match(/:([a-f\d]+)$/)?.[1];
+  const current = !!pr && revision === (anchor?.side === 'old' ? pr.mergeBase : pr.sourceHead);
   return <article className="ai-thread-inline" data-testid={`ai/thread/${encodeURIComponent(threadId)}`}>
     <span>Private Q&amp;A</span>
-    {messages.map((message, index) => <p className={`ai-message ${message.role}`} key={`${message.role}-${index}`}><b>{message.role === 'user' ? 'You' : 'AI'}</b> {message.content}</p>)}
+    {messages.map((message, index) => <AiMessageView message={message} key={`${message.role}-${index}`} />)}
+    {target && current && <AiQuestionComposer target={target} followUp onCancel={() => {}} onSent={() => {}} />}
+    {target && pr && !current && <p className="ai-thread-history">Earlier revision · follow-ups are available on current-revision threads only.</p>}
   </article>;
 }
 
-export function AiQuestionComposer({ target, onCancel, onSent }: { target: AiQuestionTarget; onCancel: () => void; onSent: () => void }) {
+export function AiQuestionComposer({ target, onCancel, onSent, followUp = false }: { target: AiQuestionTarget; onCancel: () => void; onSent: () => void; followUp?: boolean }) {
   const [question, setQuestion] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -64,18 +74,19 @@ export function AiQuestionComposer({ target, onCancel, onSent }: { target: AiQue
       if (!harnessId) { setError('Configure an AI harness before asking a question.'); return; }
       await api.aiChat({ harnessId, message: question.trim(), ...target });
       await query.invalidateQueries({ queryKey: ['ai'] });
+      setQuestion('');
       onSent();
     } catch (cause) {
       if (cause instanceof Error) setError(cause.message); else throw cause;
     } finally { setBusy(false); }
   };
   const isLine = 'line' in target;
-  return <section className="ai-question" aria-label={`Private Q&A about ${target.path}${isLine ? `:${target.line}` : ''}`}>
-    <div className="ai-question-heading"><strong>{isLine ? `Ask about line ${target.line}` : 'Ask about this file'}</strong><span>Private · not a review comment</span></div>
-    <label className="ai-question-label">{isLine ? 'Private question' : 'Private file question'}<textarea autoFocus aria-label={isLine ? 'Private question' : 'Private file question'} placeholder="What would you like to know?" value={question} onChange={event => setQuestion(event.target.value)} /></label>
+  return <section className={`ai-question${followUp ? ' follow-up' : ''}`} aria-label={`Private Q&A about ${target.path}${isLine ? `:${target.line}` : ''}`}>
+    {!followUp && <div className="ai-question-heading"><strong>{isLine ? `Ask about line ${target.line}` : 'Ask about this file'}</strong><span>Private · not a review comment</span></div>}
+    <label className="ai-question-label">{followUp ? 'Follow-up question' : isLine ? 'Private question' : 'Private file question'}<textarea autoFocus={!followUp} aria-label={followUp ? 'Follow-up question' : isLine ? 'Private question' : 'Private file question'} placeholder={followUp ? 'Ask a follow-up about this code…' : 'What would you like to know?'} value={question} onChange={event => setQuestion(event.target.value)} /></label>
     {error && <p role="alert" className="ai-error">{error}</p>}
     {busy && <AiActivity label="Thinking about your question" />}
-    <div className="ai-actions"><button className="btn sm primary" aria-label="Send private question" disabled={busy || !question.trim()} onClick={submit}>Ask privately</button><button className="btn sm ghost" onClick={onCancel}>Cancel</button></div>
+    <div className="ai-actions"><button className="btn sm primary" aria-label={followUp ? 'Send follow-up' : 'Send private question'} disabled={busy || !question.trim()} onClick={submit}>{followUp ? 'Send follow-up' : 'Ask privately'}</button>{!followUp && <button className="btn sm ghost" onClick={onCancel}>Cancel</button>}</div>
   </section>;
 }
 
