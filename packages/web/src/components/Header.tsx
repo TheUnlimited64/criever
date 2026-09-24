@@ -4,7 +4,7 @@ import { useStore } from '../store';
 
 export function Header() {
   const pr = usePr().data; const drafts = useComments().data?.drafts.length ?? 0;
-  const { setOverlay, range, setRange } = useStore(); const invalidate = useInvalidate();
+  const { setOverlay, range, setRange, aiOpen, setAiOpen } = useStore(); const invalidate = useInvalidate();
   const readOnly = useRangeReadOnly();
   if (!pr) return <header className="hdr" data-testid="header" />;
   const local = pr.kind === 'local';
@@ -33,6 +33,7 @@ export function Header() {
             eats first — never the banner's buttons or a chip's dismiss control */}
         <span className="flow"><code>{pr.sourceBranch}</code> → <code>{pr.destinationBranch}</code> <span style={{ color: 'var(--ink-3)' }}>· {pr.commits.length} commits</span></span>
       </div>
+      <button className={`btn sm${aiOpen ? ' on' : ''}`} aria-label="AI" onClick={() => setAiOpen(!aiOpen)}>AI</button>
       <span className="drafts" data-testid="header/draftCount"><span className="dot" /> {drafts} draft{drafts === 1 ? '' : 's'}</span>
       <button className="btn primary" data-testid="header/publishButton" disabled={drafts === 0} onClick={() => setOverlay('publish')}>{local ? 'Save' : 'Publish'}</button>
     </header>

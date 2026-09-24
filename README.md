@@ -31,6 +31,26 @@ Use the credential source required by your Bitbucket deployment.
 
 Other env overrides: `BITBUCKET_API_BASE` (default `https://api.bitbucket.org/2.0`), `CRIEVER_STATE_DIR` (default `~/.local/share/criever`), `CRIEVER_CACHE_DIR` (default `~/.cache/criever`), `XDG_CONFIG_HOME` (changes where the config file above is read from).
 
+## AI assistance
+
+Install and sign in to a supported local CLI (Claude Code, Codex, or OpenCode), then list the harnesses you want to use in `~/.config/criever/config.json` (or `$XDG_CONFIG_HOME/criever/config.json`):
+
+```json
+{
+  "harnesses": [
+    { "id": "claude", "name": "Claude", "kind": "claude" },
+    { "id": "codex", "name": "Codex", "kind": "codex" },
+    { "id": "opencode", "name": "OpenCode", "kind": "opencode" }
+  ]
+}
+```
+
+The optional `executable` field points to a CLI binary when it is not on `PATH`. You can keep `email` and `token` in the same JSON file for Bitbucket reviews. A harness is invoked only when you ask a question, request a rewording, or press **Run AI review**; no automatic review runs at startup. The CLI runs from the reviewed repository, so only configure harnesses you trust with that repository's contents. AI chat and review need an installed, authenticated harness but no Bitbucket credentials in `--local` mode.
+
+The header's **AI** button opens a closeable chat rail. Select a harness for general questions or run a review of the diff. **Ask AI** beside a diff line opens a private, line-specific Q&A thread using the code at that revision, separate from ordinary comment drafting. AI findings and independently anchored look-outs appear beside changed lines even while the chat rail is closed. Findings can be edited, reworded, or deleted; look-outs are guidance, not publishable findings.
+
+All AI content is kept in the review's private state. Neither Q&A nor look-outs are published or saved as review comments. Findings also stay private until you explicitly choose **Approve draft** for each one. Only approved drafts enter the existing **Publish** (Bitbucket) or **Save** (`--local`) flow; check the draft before completing that step. Reopening the same review retains its AI conversations and decisions.
+
 ## Use
 
 ```

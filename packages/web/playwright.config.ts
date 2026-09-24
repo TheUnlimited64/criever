@@ -8,6 +8,6 @@ export default defineConfig({
   ],
   projects: [
     { name: 'bitbucket', testIgnore: /agent\.spec\.ts$/, use: { baseURL: 'http://127.0.0.1:4799' } },
-    { name: 'local', testMatch: /agent\.spec\.ts$/, use: { baseURL: 'http://127.0.0.1:4801' } },
+    { name: 'local', testMatch: /(?:agent|ai)\.spec\.ts$/, use: { baseURL: 'http://127.0.0.1:4801' } },
   ],
 });

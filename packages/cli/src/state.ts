@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { Anchor, Draft, PrState } from '@criever/shared';
+import type { AiFinding, AiLookout, AiMessage, Anchor, Draft, PrState } from '@criever/shared';
 
 export const emptyState = (): PrState => ({ drafts: [], anchors: {}, viewed: {} });
 
@@ -63,4 +63,34 @@ export class StateStore {
     await this.save();
   }
   async setLastSeenHead(h: string) { this.state.lastSeenHead = h; await this.save(); }
+  async loadAiConversation(): Promise<readonly AiMessage[]> { return this.state.aiConversation ?? []; }
+  async saveAiConversation(messages: readonly AiMessage[]): Promise<void> { this.state.aiConversation = [...messages]; await this.save(); }
+  async loadAiThreads(): Promise<Readonly<Record<string, readonly AiMessage[]>>> { return this.state.aiThreads ?? {}; }
+  async saveAiThread(id: string, messages: readonly AiMessage[]): Promise<void> { this.state.aiThreads = { ...this.state.aiThreads, [id]: [...messages] }; await this.save(); }
+  async appendAiExchange(id: string, question: AiMessage, answer: AiMessage): Promise<readonly AiMessage[]> {
+    const messages = [...(this.state.aiThreads?.[id] ?? []), question, answer];
+    this.state.aiThreads = { ...this.state.aiThreads, [id]: messages };
+    await this.save();
+    return messages;
+  }
+  async loadAiFindings(): Promise<readonly AiFinding[]> { return this.state.aiFindings ?? []; }
+  async saveAiFindings(findings: readonly AiFinding[]): Promise<void> { this.state.aiFindings = [...findings]; await this.save(); }
+  async loadAiLookouts(): Promise<readonly AiLookout[]> { return this.state.aiLookouts ?? []; }
+  async saveAiLookouts(lookouts: readonly AiLookout[]): Promise<void> { this.state.aiLookouts = [...lookouts]; await this.save(); }
+  async approveAiFinding(id: string, currentHead: string): Promise<Draft | null> {
+    if (!this.state.aiFindings?.some(finding => finding.id === id)) return null;
+    const approved = this.state.approvedAiFindings ?? [];
+    if (approved.includes(id)) return null;
+    const finding = this.state.aiFindings.find(item => item.id === id);
+    if (!finding || finding.anchorCommit !== currentHead) return null;
+    this.state.approvedAiFindings = [...approved, id];
+    try {
+      const draft = await this.addDraft({ path: finding.path, line: finding.line, side: finding.side, body: finding.body, anchorCommit: finding.anchorCommit });
+      await this.save();
+      return draft;
+    } catch (error) {
+      this.state.approvedAiFindings = approved;
+      throw error;
+    }
+  }
 }

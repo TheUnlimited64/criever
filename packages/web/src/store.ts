@@ -16,6 +16,8 @@ interface S {
   split: boolean; toggleSplit: () => void;
   context: number; setContext: (n: number) => void;
   overlay: Overlay; setOverlay: (o: Overlay) => void;
+  aiOpen: boolean; setAiOpen: (open: boolean) => void;
+  selectedHarnessId: string; setSelectedHarnessId: (id: string) => void;
   composer: ComposerTarget | null; setComposer: (c: ComposerTarget | null) => void;
   selection: { side: Side; from: number; to: number } | null; setSelection: (sel: { side: Side; from: number; to: number } | null) => void;
   focusedThread: number | null; setFocusedThread: (id: number | null) => void;
@@ -33,6 +35,8 @@ export const useStore = create<S>((set) => ({
   toggleSplit: () => set(s => { try { localStorage.setItem('criever.split', s.split ? '0' : '1'); } catch {} return { split: !s.split }; }),
   context: 3, setContext: n => set({ context: n }),
   overlay: null, setOverlay: o => set({ overlay: o }),
+  aiOpen: false, setAiOpen: aiOpen => set({ aiOpen }),
+  selectedHarnessId: '', setSelectedHarnessId: selectedHarnessId => set({ selectedHarnessId }),
   composer: null, setComposer: c => set({ composer: c }),
   selection: null, setSelection: sel => set({ selection: sel }),
   focusedThread: null, setFocusedThread: id => set({ focusedThread: id }),

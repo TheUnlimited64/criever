@@ -40,6 +40,20 @@ describe('StateStore', () => {
     expect(j.viewed).toEqual({ 'a.ts': 'abc' });
     expect(j.lastSeenHead).toBe('def');
   });
+
+  it('persists private AI conversations, findings, and approval-gated drafts per review', async () => {
+    const s = new StateStore(file); await s.load();
+    await s.saveAiConversation([{ role: 'user', content: 'Why this line?' }]);
+    await s.saveAiFindings([{ id: 'finding-1', path: 'a.ts', line: 3, side: 'new', body: 'Potential issue', severity: 'warning', anchorCommit: 'head' }]);
+    const conversation = await s.loadAiConversation();
+    const findings = await s.loadAiFindings();
+    expect(conversation).toEqual([{ role: 'user', content: 'Why this line?' }]);
+    expect(findings).toHaveLength(1);
+    expect(s.state.drafts).toEqual([]);
+    const s2 = new StateStore(file); await s2.load();
+    expect(await s2.loadAiConversation()).toEqual(conversation);
+    expect(await s2.loadAiFindings()).toEqual(findings);
+  });
   it('serializes concurrent saves without losing the temp file', async () => {
     const s = new StateStore(file); await s.load();
     await Promise.all([

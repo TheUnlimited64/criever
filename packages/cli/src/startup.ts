@@ -1,7 +1,8 @@
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { BitbucketClient, BitbucketError } from './bitbucket';
-import { defaultPaths, loadCredentials } from './config';
+import { defaultPaths, loadCredentials, loadHarnesses } from './config';
+import { AiAdapter } from './ai';
 import { UserError } from './errors';
 import { Git } from './git';
 import { LocalReviewStore } from './localreview';
@@ -22,14 +23,15 @@ type Env = Record<string, string | undefined>;
 export async function startup(opts: { cwd: string; env: Env; fetch?: typeof fetch; log: (s: string) => void; local?: boolean; base?: string; head?: string }): Promise<Omit<ServerDeps, 'staticDir' | 'vscode'>> {
   const paths = defaultPaths(opts.env);
   const git = await Git.open(opts.cwd);
-  if (opts.local) return startupLocal(opts, paths, git);
+  const ai = new AiAdapter(await loadHarnesses(paths.configPath), git);
+  if (opts.local) return { ...(await startupLocal(opts, paths, git)), ai };
 
   let remote: string; let url: string;
   try {
     ({ name: remote, url } = await git.resolveRemote());
   } catch (e) {
     if (!(e instanceof UserError)) throw e;
-    return startupLocal(opts, paths, git, 'no git remote');
+    return { ...(await startupLocal(opts, paths, git, 'no git remote')), ai };
   }
   const { workspace: ws, repo } = parseRemote(url); // a remote that isn't a supported provider is still a hard error
   const branch = await git.currentBranch(); // detached HEAD is still a hard error
@@ -39,7 +41,7 @@ export async function startup(opts: { cwd: string; env: Env; fetch?: typeof fetc
     creds = await loadCredentials(opts.env, paths.configPath);
   } catch (e) {
     if (!(e instanceof UserError)) throw e;
-    return startupLocal(opts, paths, git, 'no Bitbucket credentials');
+    return { ...(await startupLocal(opts, paths, git, 'no Bitbucket credentials')), ai };
   }
   const bb = new BitbucketClient({ base: opts.env.BITBUCKET_API_BASE ?? 'https://api.bitbucket.org/2.0', ...creds, fetch: opts.fetch });
 
@@ -54,7 +56,7 @@ export async function startup(opts: { cwd: string; env: Env; fetch?: typeof fetc
     if (e instanceof BitbucketError) throw new BitbucketError(e.status, e.body, `${e.message}\n\nYou can still review locally without a provider: criever --local`);
     throw e;
   }
-  if (!pr) return startupLocal(opts, paths, git, `no open PR for ${branch} in ${ws}/${repo}`);
+  if (!pr) return { ...(await startupLocal(opts, paths, git, `no open PR for ${branch} in ${ws}/${repo}`)), ai };
   opts.log(`PR #${pr.id}: ${pr.title}`);
 
   await git.fetch(remote, [pr.source.branch.name, pr.destination.branch.name]);
@@ -70,7 +72,7 @@ export async function startup(opts: { cwd: string; env: Env; fetch?: typeof fetc
   await carryOverLocalComments(localReview, store, pr.id);
 
   const provider = new BitbucketProvider(bb, ws, repo, pr.id);
-  return { git, store, provider, ws, repo, meta: rawPrToMeta(pr), mergeBase, comments, commits, remote, localReview };
+  return { git, store, provider, ws, repo, meta: rawPrToMeta(pr), mergeBase, comments, commits, remote, localReview, ai };
 }
 
 /**

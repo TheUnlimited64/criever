@@ -22,7 +22,16 @@ export interface PrState {
   anchors: Record<number, Anchor>;
   viewed: Record<string, string>;
   lastSeenHead?: string;
+  aiConversation?: AiMessage[];
+  aiThreads?: Record<string, AiMessage[]>;
+  aiFindings?: AiFinding[];
+  aiLookouts?: AiLookout[];
+  approvedAiFindings?: string[];
 }
+
+export interface AiMessage { readonly role: 'user' | 'assistant'; readonly content: string }
+export interface AiFinding { readonly id: string; readonly path: string; readonly line: number; readonly side: Side; readonly body: string; readonly severity: 'info' | 'warning' | 'error'; readonly anchorCommit: string }
+export interface AiLookout { readonly id: string; readonly body: string; readonly findingId?: string; readonly path?: string; readonly line?: number; readonly side?: Side; readonly anchorCommit?: string }
 
 export type AnchorStatus =
   | { status: 'same' }

@@ -1,18 +1,24 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type { Side } from '@criever/shared';
 import { api } from '../api';
-import { useComments, useInvalidate, useRangeReadOnly } from '../hooks';
+import { useComments, useInvalidate, usePr, useRangeReadOnly } from '../hooks';
 import { useStore } from '../store';
 import { CodePane } from './CodePane';
 import { Composer } from './Composer';
 import type { RowExtra } from './DiffTable';
 import { DraftCard } from './ThreadCard';
 import { ThreadCardFull } from './ThreadCardFull';
+import { AiFindingCard, AiLookoutCard, AiQuestionComposer, AiThreadCard, threadAnchor } from './AiInline';
 
 export function ReviewCodePane() {
   const s = useStore(); const path = s.currentPath; const c = useComments().data; const invalidate = useInvalidate();
+  const pr = usePr().data;
+  const aiAtHead = s.viewMode !== 'file' || !s.fileAt || s.fileAt === pr?.sourceHead;
   const readOnly = useRangeReadOnly();
+  const ai = useQuery({ queryKey: ['ai'], queryFn: api.ai });
   const [editing, setEditing] = useState<string | null>(null);
+  const [aiTarget, setAiTarget] = useState<{ path: string; line: number; side: Side } | null>(null);
 
   const onGutterClick = (side: Side, line: number, shift: boolean) => {
     if (!path) return;
@@ -21,7 +27,8 @@ export function ReviewCodePane() {
       s.setSelection({ side, from, to }); s.setComposer({ path, line: to, side, endLine: from });
     } else { s.setSelection({ side, from: line, to: line }); s.setComposer({ path, line, side }); }
   };
-  const close = () => { s.setComposer(null); s.setSelection(null); };
+  const close = useCallback(() => { s.setComposer(null); s.setSelection(null); }, [s.setComposer, s.setSelection]);
+  const refreshAi = useCallback(async () => { await ai.refetch(); invalidate(); }, [ai.refetch, invalidate]);
 
   const extras = useMemo<RowExtra[]>(() => {
     if (!c || !path) return [];
@@ -37,8 +44,25 @@ export function ReviewCodePane() {
       key: 'composer', afterLine: { side: s.composer.side, line: s.composer.line },
       node: <Composer target={s.composer} onCancel={close} onSave={async b => { await api.addDraft({ path, line: s.composer!.line, side: s.composer!.side, body: b }); close(); invalidate(); s.showToast('Saved locally. Publish sends all drafts at once.'); }} />,
     }] : [];
-    return [...th, ...dr, ...cm];
-  }, [c, path, s.composer, editing, invalidate]);
+    const guidance = (aiAtHead ? ai.data?.lookouts ?? [] : []).flatMap(item => item.path === path && item.line != null ? [{
+      key: `ai-lookout-${item.id}`, afterLine: { side: item.side ?? 'new', line: item.line },
+      node: <AiLookoutCard lookout={item} />,
+    }] : []);
+    const approved = new Set(ai.data?.approvedIds ?? []);
+    const findings = (aiAtHead ? ai.data?.findings ?? [] : []).filter(item => item.path === path && !approved.has(item.id)).map(item => ({
+      key: `ai-finding-${item.id}`, afterLine: { side: item.side, line: item.line },
+       node: <AiFindingCard finding={item} harnessId={ai.data?.harnesses.find(harness => harness.id === s.selectedHarnessId)?.id ?? ai.data?.harnesses[0]?.id ?? ''} onChange={refreshAi} />,
+    }));
+    const contextualThreads = Object.entries(aiAtHead ? ai.data?.threads ?? {} : {}).flatMap(([threadId, messages]) => {
+      const anchor = threadAnchor(threadId);
+      return anchor?.path === path ? [{ key: `ai-thread-${threadId}`, afterLine: { side: anchor.side, line: anchor.line }, node: <AiThreadCard threadId={threadId} messages={messages} /> }] : [];
+    });
+    const question = aiAtHead && aiTarget?.path === path ? [{
+      key: 'ai-question', afterLine: { side: aiTarget.side, line: aiTarget.line },
+      node: <AiQuestionComposer target={aiTarget} onCancel={() => setAiTarget(null)} onSent={() => setAiTarget(null)} />,
+    }] : [];
+    return [...th, ...dr, ...cm, ...guidance, ...findings, ...contextualThreads, ...question];
+    }, [c, path, s.composer, s.selectedHarnessId, editing, invalidate, ai.data, aiAtHead, aiTarget, close, refreshAi]);
 
   // A fileDeleted thread has no line to render under (its file is gone), but its displayPath still
   // names the file it was on — this is the "obvious place" the user looks for it.
@@ -50,5 +74,5 @@ export function ReviewCodePane() {
   }, [c, path]);
 
   if (readOnly) return <CodePane onGutterClick={() => {}} />;
-  return <CodePane extras={extras} unanchored={unanchored} onGutterClick={onGutterClick} selection={s.selection} />;
+  return <CodePane extras={extras} unanchored={unanchored} onGutterClick={onGutterClick} onAskAi={aiAtHead ? (side, line) => path && setAiTarget({ path, line, side }) : undefined} selection={s.selection} />;
 }
