@@ -9,7 +9,7 @@ import { renderMarkdown } from './markdown';
 
 const isMarkdownPath = (p: string) => /\.(md|markdown)$/i.test(p);
 
-export function CodePane({ extras = [], unanchored = null, onGutterClick = () => {}, onAskAi, selection = null }: { extras?: RowExtra[]; unanchored?: React.ReactNode; onGutterClick?: (side: Side, line: number, shift: boolean) => void; onAskAi?: (side: Side, line: number) => void; selection?: { side: Side; from: number; to: number } | null }) {
+export function CodePane({ extras = [], unanchored = null, fileAi = null, onGutterClick = () => {}, onAskAi, onAskFile, selection = null }: { extras?: RowExtra[]; unanchored?: React.ReactNode; fileAi?: React.ReactNode; onGutterClick?: (side: Side, line: number, shift: boolean) => void; onAskAi?: (side: Side, line: number) => void; onAskFile?: () => void; selection?: { side: Side; from: number; to: number } | null }) {
   const s = useStore(); const pr = usePr().data; const files = useFiles().data ?? [];
   const readOnly = useRangeReadOnly();
   const f = files.find(x => x.path === s.currentPath);
@@ -34,6 +34,7 @@ export function CodePane({ extras = [], unanchored = null, onGutterClick = () =>
       <div className="code-hd">
         <span className="path" data-testid="code/path"><span className="dim">{dir}</span>{s.currentPath.slice(dir.length)}</span>
         {f && <span className="stat" data-testid="code/stat"><span className="p">+{f.additions}</span> <span className="m">−{f.deletions}</span></span>}
+        {onAskFile && f?.status !== 'D' && (s.viewMode !== 'file' || file.data?.content != null) && <button className="ai-file-action" aria-label="Ask AI about file" onClick={onAskFile}>Ask AI about file</button>}
         <span className="right">
           {isMd && (
             <span className="seg">
@@ -59,6 +60,7 @@ export function CodePane({ extras = [], unanchored = null, onGutterClick = () =>
         {/* Kept mounted (just hidden) while previewing, not unmounted, so an open composer's
             in-progress draft survives a round trip through preview mode. */}
         <div hidden={preview}>
+          {fileAi}
           {unanchored}
           {s.viewMode === 'diff' && diff.data?.file && <DiffTable file={diff.data.file} path={s.currentPath} split={s.split} extras={extras} cursorLine={s.cursor} selection={selection} onAskAi={onAskAi} onExpand={expand}
             onGutterClick={(side, line, shift) => { s.setCursor({ side, line }); onGutterClick(side, line, shift); }} />}
