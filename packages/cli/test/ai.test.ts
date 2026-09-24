@@ -106,6 +106,36 @@ describe('AI review HTTP contract', () => {
     expect((await f.store.loadAiThreads())[`general:${f.head}`]?.map(message => message.content)).toEqual(['First question', 'First answer', 'Second question', 'Second answer']);
   });
 
+  it('retains overlapping review runs and chat when reviews finish out of order', async () => {
+    const f = await fixture();
+    const pending: ((answer: string) => void)[] = [];
+    let bothStarted = () => {};
+    const started = new Promise<void>(resolve => { bothStarted = resolve; });
+    const runner: AiRunner = { ...f.runner, run: async (_id, prompt) => {
+      if (prompt.includes('\n\nConversation:\n')) return '**Chat answered**';
+      return new Promise<string>(resolve => { pending.push(resolve); if (pending.length === 2) bothStarted(); });
+    } };
+    const deps = { adapter: runner, store: f.store, git: f.git, meta: f.meta, base: f.base };
+    const first = aiEndpoint(request('POST', '/api/ai/review', { harnessId: 'fake' }), '/api/ai/review', deps);
+    const second = aiEndpoint(request('POST', '/api/ai/review', { harnessId: 'fake' }), '/api/ai/review', deps);
+    await started;
+    const reviewOutput = (label: string) => JSON.stringify({ findings: [{ path: 'a.ts', line: 2, side: 'new', body: label, severity: 'warning' }], lookouts: [] });
+    pending[1]?.(reviewOutput('Second run'));
+    await second;
+    const secondFinding = (await f.store.loadAiFindings()).find(item => item.body === 'Second run');
+    expect(secondFinding).toBeDefined();
+    await aiEndpoint(request('PATCH', `/api/ai/findings/${secondFinding?.id}`, { body: 'Edited second run' }), `/api/ai/findings/${secondFinding?.id}`, deps);
+    const chat = await aiEndpoint(request('POST', '/api/ai/chat', { harnessId: 'fake', message: 'What else changed?' }), '/api/ai/chat', deps);
+    expect(chat?.status).toBe(200);
+    pending[0]?.(reviewOutput('First run'));
+    await first;
+    const reopened = new StateStore(join(f.root, 'private-state.json')); await reopened.load();
+    expect((await reopened.loadAiFindings()).map(item => item.body).sort()).toEqual(['Edited second run', 'First run']);
+    expect(reopened.state.aiReviewRuns).toHaveLength(2);
+    expect(new Set(reopened.state.aiReviewRuns?.map(run => run.id)).size).toBe(2);
+    expect((await reopened.loadAiThreads())[`general:${f.head}`]?.map(message => message.content)).toEqual(['What else changed?', '**Chat answered**']);
+  });
+
   it('passes review-size prompts through stdin without the OS argument limit', async () => {
     const f = await fixture();
     const executable = join(f.root, 'harness.sh');

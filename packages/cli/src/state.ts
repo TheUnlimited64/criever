@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { AiFinding, AiLookout, AiMessage, Anchor, Draft, PrState } from '@criever/shared';
+import type { AiFinding, AiLookout, AiMessage, AiReviewRun, Anchor, Draft, PrState } from '@criever/shared';
 
 export const emptyState = (): PrState => ({ drafts: [], anchors: {}, viewed: {} });
 
@@ -28,6 +28,16 @@ export class StateStore {
   }
 
   private writing: Promise<void> = Promise.resolve();
+
+  private mutateAi<T>(change: () => T): Promise<T> {
+    const next = this.writing.catch(() => {}).then(async () => {
+      const value = change();
+      await this.writeNow();
+      return value;
+    });
+    this.writing = next.then(() => {}, () => {});
+    return next;
+  }
 
   /** Atomic write: .tmp then rename. Overlapping calls are serialized — the same .tmp path cannot be renamed twice. */
   save(): Promise<void> {
@@ -67,11 +77,35 @@ export class StateStore {
   async saveAiConversation(messages: readonly AiMessage[]): Promise<void> { this.state.aiConversation = [...messages]; await this.save(); }
   async loadAiThreads(): Promise<Readonly<Record<string, readonly AiMessage[]>>> { return this.state.aiThreads ?? {}; }
   async saveAiThread(id: string, messages: readonly AiMessage[]): Promise<void> { this.state.aiThreads = { ...this.state.aiThreads, [id]: [...messages] }; await this.save(); }
-  async appendAiExchange(id: string, question: AiMessage, answer: AiMessage): Promise<readonly AiMessage[]> {
-    const messages = [...(this.state.aiThreads?.[id] ?? []), question, answer];
-    this.state.aiThreads = { ...this.state.aiThreads, [id]: messages };
-    await this.save();
-    return messages;
+  appendAiExchange(id: string, question: AiMessage, answer: AiMessage): Promise<readonly AiMessage[]> {
+    return this.mutateAi(() => {
+      const messages = [...(this.state.aiThreads?.[id] ?? []), question, answer];
+      this.state.aiThreads = { ...this.state.aiThreads, [id]: messages };
+      return messages;
+    });
+  }
+  loadAiReviewRuns(): readonly AiReviewRun[] {
+    if (this.state.aiReviewRuns) return this.state.aiReviewRuns;
+    const legacy = this.state.aiReviewResult;
+    return legacy ? [{ ...legacy, id: 'legacy', harnessId: '', completedAt: '' }] : [];
+  }
+  completeAiReview(run: AiReviewRun, findings: readonly AiFinding[], lookouts: readonly AiLookout[]): Promise<void> {
+    return this.mutateAi(() => {
+      this.state.aiReviewRuns = [...this.loadAiReviewRuns(), run];
+      this.state.aiFindings = [...(this.state.aiFindings ?? []), ...findings];
+      this.state.aiLookouts = [...(this.state.aiLookouts ?? []), ...lookouts];
+      this.state.aiReviewResult = run;
+    });
+  }
+  mutateAiCollections<T>(change: (findings: AiFinding[], lookouts: AiLookout[]) => T): Promise<T> {
+    return this.mutateAi(() => {
+      const findings = [...(this.state.aiFindings ?? [])];
+      const lookouts = [...(this.state.aiLookouts ?? [])];
+      const value = change(findings, lookouts);
+      this.state.aiFindings = findings;
+      this.state.aiLookouts = lookouts;
+      return value;
+    });
   }
   async loadAiFindings(): Promise<readonly AiFinding[]> { return this.state.aiFindings ?? []; }
   async saveAiFindings(findings: readonly AiFinding[]): Promise<void> { this.state.aiFindings = [...findings]; await this.save(); }
