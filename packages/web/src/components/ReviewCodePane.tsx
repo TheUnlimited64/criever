@@ -18,16 +18,18 @@ export function ReviewCodePane() {
   const readOnly = useRangeReadOnly();
   const ai = useQuery({ queryKey: ['ai'], queryFn: api.ai });
   const [editing, setEditing] = useState<string | null>(null);
-  const [aiTarget, setAiTarget] = useState<{ path: string; line: number; side: Side } | { path: string } | null>(null);
+  const [aiTarget, setAiTarget] = useState<{ path: string } | null>(null);
+  const [composerMode, setComposerMode] = useState<'comment' | 'ai'>('comment');
 
   const onGutterClick = (side: Side, line: number, shift: boolean) => {
     if (!path) return;
+    setComposerMode('comment');
     if (shift && s.selection && s.selection.side === side) {
       const from = Math.min(s.selection.from, line), to = Math.max(s.selection.to, line);
       s.setSelection({ side, from, to }); s.setComposer({ path, line: to, side, endLine: from });
     } else { s.setSelection({ side, from: line, to: line }); s.setComposer({ path, line, side }); }
   };
-  const close = useCallback(() => { s.setComposer(null); s.setSelection(null); }, [s.setComposer, s.setSelection]);
+  const close = useCallback(() => { s.setComposer(null); s.setSelection(null); setComposerMode('comment'); }, [s.setComposer, s.setSelection]);
   const refreshAi = useCallback(async () => { await ai.refetch(); invalidate(); }, [ai.refetch, invalidate]);
 
   const extras = useMemo<RowExtra[]>(() => {
@@ -42,7 +44,12 @@ export function ReviewCodePane() {
     }));
     const cm = s.composer && s.composer.path === path && s.composer.parentId == null ? [{
       key: 'composer', afterLine: { side: s.composer.side, line: s.composer.line },
-      node: <Composer target={s.composer} onCancel={close} onSave={async b => { await api.addDraft({ path, line: s.composer!.line, side: s.composer!.side, body: b }); close(); invalidate(); s.showToast('Saved locally. Publish sends all drafts at once.'); }} />,
+      node: <div className="line-composer"><div className="line-composer-choices" role="group" aria-label="Line action">
+        <button type="button" aria-pressed={composerMode === 'comment'} onClick={() => setComposerMode('comment')}>PR comment</button>
+        {aiAtHead && <button type="button" aria-pressed={composerMode === 'ai'} onClick={() => setComposerMode('ai')}>Ask AI privately</button>}
+      </div>{composerMode === 'ai' && aiAtHead
+        ? <AiQuestionComposer target={{ path, line: s.composer.line, side: s.composer.side }} onCancel={close} onSent={close} />
+        : <Composer target={s.composer} onCancel={close} onSave={async b => { await api.addDraft({ path, line: s.composer!.line, side: s.composer!.side, body: b }); close(); invalidate(); s.showToast('Saved locally. Publish sends all drafts at once.'); }} />}</div>,
     }] : [];
     const guidance = (aiAtHead ? ai.data?.lookouts ?? [] : []).flatMap(item => item.path === path && item.line != null ? [{
       key: `ai-lookout-${item.id}`, afterLine: { side: item.side ?? 'new', line: item.line },
@@ -57,12 +64,8 @@ export function ReviewCodePane() {
       const anchor = threadAnchor(threadId);
       return anchor?.path === path ? [{ key: `ai-thread-${threadId}`, afterLine: { side: anchor.side, line: anchor.line }, node: <AiThreadCard threadId={threadId} messages={messages} /> }] : [];
     });
-    const question = aiAtHead && aiTarget?.path === path && 'line' in aiTarget ? [{
-      key: 'ai-question', afterLine: { side: aiTarget.side, line: aiTarget.line },
-      node: <AiQuestionComposer target={aiTarget} onCancel={() => setAiTarget(null)} onSent={() => setAiTarget(null)} />,
-    }] : [];
-    return [...th, ...dr, ...cm, ...guidance, ...findings, ...contextualThreads, ...question];
-    }, [c, path, s.composer, s.selectedHarnessId, editing, invalidate, ai.data, aiAtHead, aiTarget, close, refreshAi]);
+    return [...th, ...dr, ...cm, ...guidance, ...findings, ...contextualThreads];
+  }, [c, path, s.composer, s.selectedHarnessId, editing, invalidate, ai.data, aiAtHead, composerMode, close, refreshAi]);
 
   // A fileDeleted thread has no line to render under (its file is gone), but its displayPath still
   // names the file it was on — this is the "obvious place" the user looks for it.
@@ -77,8 +80,8 @@ export function ReviewCodePane() {
   const fileThread = ai.data?.threads[fileThreadId];
   const fileAi = <div className="ai-file-context" data-testid="ai/file-thread">
     {fileThread && <AiThreadCard threadId={fileThreadId} messages={fileThread} />}
-    {aiTarget?.path === path && !('line' in aiTarget) && <AiQuestionComposer target={aiTarget} onCancel={() => setAiTarget(null)} onSent={() => setAiTarget(null)} />}
+    {aiTarget?.path === path && <AiQuestionComposer target={aiTarget} onCancel={() => setAiTarget(null)} onSent={() => setAiTarget(null)} />}
   </div>;
   if (readOnly) return <CodePane onGutterClick={() => {}} />;
-  return <CodePane extras={extras} unanchored={unanchored} fileAi={aiAtHead && (fileThread || aiTarget?.path === path && !('line' in aiTarget)) ? fileAi : null} onGutterClick={onGutterClick} onAskFile={aiAtHead ? () => path && setAiTarget({ path }) : undefined} onAskAi={aiAtHead ? (side, line) => path && setAiTarget({ path, line, side }) : undefined} selection={s.selection} />;
+  return <CodePane extras={extras} unanchored={unanchored} fileAi={aiAtHead && (fileThread || aiTarget?.path === path) ? fileAi : null} onGutterClick={onGutterClick} onAskFile={aiAtHead ? () => path && setAiTarget({ path }) : undefined} selection={s.selection} />;
 }

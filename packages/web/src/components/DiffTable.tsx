@@ -3,7 +3,7 @@ import type { DiffLine, FileDiff, Side } from '@criever/shared';
 import { highlightLine } from './highlight';
 
 export interface RowExtra { afterLine: { side: Side; line: number }; node: ReactNode; key: string }
-interface Common { path: string; extras: RowExtra[]; cursorLine: { side: Side; line: number } | null; onGutterClick: (side: Side, line: number, shiftKey: boolean) => void; onAskAi?: (side: Side, line: number) => void; selection?: { side: Side; from: number; to: number } | null }
+interface Common { path: string; extras: RowExtra[]; cursorLine: { side: Side; line: number } | null; onGutterClick: (side: Side, line: number, shiftKey: boolean) => void; canComment?: boolean; selection?: { side: Side; from: number; to: number } | null }
 
 const sideOf = (l: DiffLine): { side: Side; line: number } => l.kind === 'del' ? { side: 'old', line: l.oldNo! } : { side: 'new', line: l.newNo! };
 const inSel = (c: Common, s: { side: Side; line: number }) => !!c.selection && c.selection.side === s.side && s.line >= c.selection.from && s.line <= c.selection.to;
@@ -18,7 +18,7 @@ function Row({ l, c }: { l: DiffLine; c: Common }) {
   return (
     <tr className={cls} data-testid={`code/row/${s.side}/${s.line}`} data-side={s.side} data-line={s.line}>
       <td className="ln o">{l.oldNo ?? ''}</td><td className="ln">{l.newNo ?? ''}</td>
-      <td className="g" data-testid={`code/row/${s.side}/${s.line}/gutter`} onClick={e => c.onGutterClick(s.side, s.line, e.shiftKey)}><span>{l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ''}</span>{c.onAskAi && <button className="ai-line-action" aria-label={`Ask AI about line ${s.line}`} title="Ask AI privately about this line" onClick={e => { e.stopPropagation(); c.onAskAi?.(s.side, s.line); }}>AI</button>}</td>
+      <td className="g" data-testid={`code/row/${s.side}/${s.line}/gutter`} onClick={e => c.onGutterClick(s.side, s.line, e.shiftKey)}>{c.canComment !== false && <button className={`gutter-action${l.kind === 'context' ? ' context' : ''}`} aria-label={`Comment or ask AI about line ${s.line}`} onClick={e => { e.stopPropagation(); c.onGutterClick(s.side, s.line, e.shiftKey); }}>{l.kind === 'del' ? '−' : '+'}</button>}</td>
       <td className="src" dangerouslySetInnerHTML={{ __html: highlightLine(l.text, c.path) || ' ' }} />
     </tr>
   );
@@ -60,7 +60,7 @@ function SplitRows({ lines, c }: { lines: DiffLine[]; c: Common }) {
     return (
       <>
         <td className={`ln ${side === 'old' ? 'o' : ''}`}>{lineNo}</td>
-        <td className={`g ${l.kind}`} data-testid={`code/row/${side}/${lineNo}/gutter`} onClick={e => c.onGutterClick(side, lineNo, e.shiftKey)}><span>{l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ''}</span>{c.onAskAi && <button className="ai-line-action" aria-label={`Ask AI about line ${lineNo}`} title="Ask AI privately about this line" onClick={e => { e.stopPropagation(); c.onAskAi?.(side, lineNo); }}>AI</button>}</td>
+        <td className={`g ${l.kind}`} data-testid={`code/row/${side}/${lineNo}/gutter`} onClick={e => c.onGutterClick(side, lineNo, e.shiftKey)}>{c.canComment !== false && <button className={`gutter-action${l.kind === 'context' ? ' context' : ''}`} aria-label={`Comment or ask AI about line ${lineNo}`} onClick={e => { e.stopPropagation(); c.onGutterClick(side, lineNo, e.shiftKey); }}>{l.kind === 'del' ? '−' : '+'}</button>}</td>
         <td className={`src ${l.kind}`} dangerouslySetInnerHTML={{ __html: highlightLine(l.text, c.path) || ' ' }} />
       </>
     );
@@ -88,7 +88,7 @@ export function FileTable(p: Common & { content: string }) {
         return (
           <Fragment key={i}>
             <tr className={`line ${p.cursorLine?.line === line ? 'cursor' : ''} ${inSel(p, s) ? 'sel' : ''}`} data-testid={`code/row/new/${line}`} data-side="new" data-line={line}>
-              <td className="ln">{line}</td><td className="g" onClick={e => p.onGutterClick('new', line, e.shiftKey)}>{p.onAskAi && <button className="ai-line-action" aria-label={`Ask AI about line ${line}`} title="Ask AI privately about this line" onClick={e => { e.stopPropagation(); p.onAskAi?.('new', line); }}>AI</button>}</td><td className="src" dangerouslySetInnerHTML={{ __html: highlightLine(t, p.path) || ' ' }} />
+              <td className="ln">{line}</td><td className="g" onClick={e => p.onGutterClick('new', line, e.shiftKey)}>{p.canComment !== false && <button className="gutter-action context" aria-label={`Comment or ask AI about line ${line}`} onClick={e => { e.stopPropagation(); p.onGutterClick('new', line, e.shiftKey); }}>+</button>}</td><td className="src" dangerouslySetInnerHTML={{ __html: highlightLine(t, p.path) || ' ' }} />
             </tr>
             {extrasAfter(p.extras, s, 3)}
           </Fragment>

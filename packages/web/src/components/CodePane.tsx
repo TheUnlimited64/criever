@@ -9,7 +9,7 @@ import { renderMarkdown } from './markdown';
 
 const isMarkdownPath = (p: string) => /\.(md|markdown)$/i.test(p);
 
-export function CodePane({ extras = [], unanchored = null, fileAi = null, onGutterClick = () => {}, onAskAi, onAskFile, selection = null }: { extras?: RowExtra[]; unanchored?: React.ReactNode; fileAi?: React.ReactNode; onGutterClick?: (side: Side, line: number, shift: boolean) => void; onAskAi?: (side: Side, line: number) => void; onAskFile?: () => void; selection?: { side: Side; from: number; to: number } | null }) {
+export function CodePane({ extras = [], unanchored = null, fileAi = null, onGutterClick = () => {}, onAskFile, selection = null }: { extras?: RowExtra[]; unanchored?: React.ReactNode; fileAi?: React.ReactNode; onGutterClick?: (side: Side, line: number, shift: boolean) => void; onAskFile?: () => void; selection?: { side: Side; from: number; to: number } | null }) {
   const s = useStore(); const pr = usePr().data; const files = useFiles().data ?? [];
   const readOnly = useRangeReadOnly();
   const f = files.find(x => x.path === s.currentPath);
@@ -62,7 +62,7 @@ export function CodePane({ extras = [], unanchored = null, fileAi = null, onGutt
         <div hidden={preview}>
           {fileAi}
           {unanchored}
-          {s.viewMode === 'diff' && diff.data?.file && <DiffTable file={diff.data.file} path={s.currentPath} split={s.split} extras={extras} cursorLine={s.cursor} selection={selection} onAskAi={onAskAi} onExpand={expand}
+          {s.viewMode === 'diff' && diff.data?.file && <DiffTable file={diff.data.file} path={s.currentPath} split={s.split} extras={extras} cursorLine={s.cursor} selection={selection} canComment={!readOnly} onExpand={expand}
             onGutterClick={(side, line, shift) => { s.setCursor({ side, line }); onGutterClick(side, line, shift); }} />}
           {s.viewMode === 'diff' && diff.data && !diff.data.file && (
             <div className="empty" data-testid="code/noDiff">
@@ -72,7 +72,7 @@ export function CodePane({ extras = [], unanchored = null, fileAi = null, onGutt
             </div>
           )}
           {s.viewMode === 'file' && file.data && (file.data.content == null ? <div className="empty">File does not exist at this commit.</div>
-             : <FileTable content={file.data.content} path={s.currentPath} extras={extras} cursorLine={s.cursor} selection={selection} onAskAi={onAskAi} onGutterClick={(side, line, shift) => { s.setCursor({ side, line }); onGutterClick(side, line, shift); }} />)}
+             : <FileTable content={file.data.content} path={s.currentPath} extras={extras} cursorLine={s.cursor} selection={selection} canComment={!readOnly} onGutterClick={(side, line, shift) => { s.setCursor({ side, line }); onGutterClick(side, line, shift); }} />)}
           {(diff.error || file.error) && <div className="empty" data-testid="code/error">{String((diff.error ?? file.error as Error).message)}</div>}
         </div>
         {preview && isMd && previewFile.data?.content != null && (
