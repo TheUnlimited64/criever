@@ -67,7 +67,8 @@ function SplitRows({ lines, c }: { lines: DiffLine[]; c: Common }) {
   };
   return <>{pairs.map((pr, i) => {
     const s = pr.right ? sideOf(pr.right) : pr.left ? sideOf(pr.left) : null;
-    const cls = ['line', 'split', s && c.cursorLine?.side === s.side && c.cursorLine.line === s.line ? 'cursor' : '', s && inSel(c, s) ? 'sel' : ''].join(' ');
+    const positions = [pr.left && { side: 'old' as Side, line: pr.left.oldNo! }, pr.right && { side: 'new' as Side, line: pr.right.newNo! }].filter(position => position !== null);
+    const cls = ['line', 'split', positions.some(position => c.cursorLine?.side === position.side && c.cursorLine.line === position.line) ? 'cursor' : '', positions.some(position => inSel(c, position)) ? 'sel' : ''].join(' ');
     return (
       <Fragment key={i}>
         <tr className={cls} data-testid={s ? `code/row/${s.side}/${s.line}` : undefined} data-side={s?.side} data-line={s?.line}>{cell(pr.left, 'old')}{cell(pr.right, 'new')}</tr>

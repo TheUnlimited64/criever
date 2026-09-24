@@ -52,12 +52,12 @@ export function ReviewCodePane() {
         ? <AiQuestionComposer target={{ path, line: s.composer.line, side: s.composer.side }} onCancel={close} onSent={close} />
         : <Composer target={s.composer} onCancel={close} onSave={async b => { await api.addDraft({ path, line: s.composer!.line, side: s.composer!.side, body: b }); close(); invalidate(); s.showToast(local ? 'Draft saved. Save the review to keep it as a local comment.' : 'Saved locally. Publish sends all drafts at once.'); }} />}</div>,
     }] : [];
-    const guidance = (aiAtHead ? ai.data?.lookouts ?? [] : []).flatMap(item => item.path === path && item.line != null ? [{
+    const guidance = (aiAtHead ? ai.data?.lookouts ?? [] : []).flatMap(item => item.anchorCommit === pr?.sourceHead && item.path === path && item.line != null ? [{
       key: `ai-lookout-${item.id}`, afterLine: { side: item.side ?? 'new', line: item.line },
       node: <AiLookoutCard lookout={item} />,
     }] : []);
     const approved = new Set(ai.data?.approvedIds ?? []);
-    const findings = (aiAtHead ? ai.data?.findings ?? [] : []).filter(item => item.path === path && !approved.has(item.id)).map(item => ({
+    const findings = (aiAtHead ? ai.data?.findings ?? [] : []).filter(item => item.anchorCommit === pr?.sourceHead && item.path === path && !approved.has(item.id)).map(item => ({
       key: `ai-finding-${item.id}`, afterLine: { side: item.side, line: item.line },
        node: <AiFindingCard finding={item} harnessId={ai.data?.harnesses.find(harness => harness.id === s.selectedHarnessId)?.id ?? ai.data?.harnesses[0]?.id ?? ''} onChange={refreshAi} />,
     }));
@@ -66,7 +66,7 @@ export function ReviewCodePane() {
       return anchor?.path === path ? [{ key: `ai-thread-${threadId}`, afterLine: { side: anchor.side, line: anchor.line }, node: <AiThreadCard threadId={threadId} messages={messages} /> }] : [];
     });
     return [...th, ...dr, ...cm, ...guidance, ...findings, ...contextualThreads];
-  }, [c, path, s.composer, s.selectedHarnessId, editing, invalidate, local, ai.data, aiAtHead, composerMode, close, refreshAi]);
+  }, [c, path, pr?.sourceHead, s.composer, s.selectedHarnessId, editing, invalidate, local, ai.data, aiAtHead, composerMode, close, refreshAi]);
 
   const unanchored = useMemo(() => {
     if (!c || !path) return null;

@@ -25,6 +25,18 @@ export function CodePane({ extras = [], unanchored = null, fileAi = null, onGutt
   const previewFile = useFile(isMd && preview ? s.currentPath : null, previewAt);
   const bodyRef = useRef<HTMLDivElement>(null);
   useEffect(() => { s.setCursor(null); setPreview(false); if (s.jumpLine) { s.setCursor({ side: 'new', line: s.jumpLine }); setTimeout(() => bodyRef.current?.querySelector(`[data-testid="code/row/new/${s.jumpLine}"]`)?.scrollIntoView({ block: 'center' }), 50); } }, [s.currentPath, s.viewMode, s.jumpLine]);
+  useEffect(() => {
+    const target = s.aiJump;
+    if (!target || target.path !== s.currentPath || s.viewMode !== 'diff' || !diff.data || diff.isPlaceholderData || diff.isFetching) return;
+    const row = bodyRef.current?.querySelector(`[data-testid="code/row/${target.side}/${target.line}/gutter"]`)
+      ?? bodyRef.current?.querySelector(`[data-testid="code/row/${target.side}/${target.line}"]`);
+    if (row) {
+      row.scrollIntoView({ block: 'center' });
+      s.setCursor({ side: target.side, line: target.line });
+      s.setAiJump(null);
+    } else if (s.context !== 100000) s.setContext(100000);
+    else { s.showToast(`Line ${target.line} is no longer in this diff.`); s.setAiJump(null); }
+  }, [s.aiJump, s.currentPath, s.viewMode, s.context, diff.dataUpdatedAt, diff.isPlaceholderData, diff.isFetching]);
   const expand = () => s.setContext(s.context === 3 ? 25 : 100000);
   const openVscode = async () => { try { const { url } = await api.vscodeOpen(s.currentPath!, s.cursor?.line ?? 1); window.open(url, 'criever-vscode'); } catch (e) { s.showToast((e as Error).message); } };
   if (!s.currentPath) return <section className="pane code" data-testid="code"><div className="empty">Pick a file</div></section>;

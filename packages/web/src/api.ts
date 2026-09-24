@@ -1,7 +1,7 @@
-import type { AiFinding, AiLookout, AiMessage, AiReviewSummary, ChangedFile, CommentsResponse, DiffResponse, Draft, PrInfo, PublishResult, SearchHit, Side, TreeEntry, VscodeOpenResponse } from '@criever/shared';
+import type { AiFinding, AiLookout, AiMessage, AiReviewRun, AiReviewSummary, ChangedFile, CommentsResponse, DiffResponse, Draft, PrInfo, PublishResult, SearchHit, Side, TreeEntry, VscodeOpenResponse } from '@criever/shared';
 
 export type { AiFinding, AiLookout, AiMessage } from '@criever/shared';
-export interface AiState { harnesses: { id: string; name: string; kind: string }[]; conversation: AiMessage[]; threads: Record<string, AiMessage[]>; findings: AiFinding[]; lookouts: AiLookout[]; reviewResult: AiReviewSummary | null; approvedIds: readonly string[] }
+export interface AiState { harnesses: { id: string; name: string; kind: string }[]; conversation: AiMessage[]; threads: Record<string, AiMessage[]>; findings: AiFinding[]; lookouts: AiLookout[]; reviewResult: AiReviewSummary | null; reviewRuns: AiReviewRun[]; approvedIds: readonly string[] }
 
 export const reviewSessionId = (() => {
   const match = window.location.pathname.match(/^\/review\/([^/]+)\/?$/);
