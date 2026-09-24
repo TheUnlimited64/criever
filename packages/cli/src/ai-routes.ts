@@ -46,7 +46,7 @@ async function postAi(req: Request, path: string, deps: AiRouteDeps): Promise<Re
   if (path === '/api/ai/chat') {
     if (typeof input.message !== 'string' || !input.message.trim()) return json({ error: 'message required' }, 400);
     const hasPath = input.path !== undefined; const hasLine = input.line !== undefined;
-    if (hasPath !== hasLine) return json({ error: 'path and line must be provided together' }, 400);
+    if (hasLine && !hasPath) return json({ error: 'path required for a line question' }, 400);
     const context = hasPath ? await lineContext(input, deps) : `Repository diff ${deps.base}..${deps.meta.sourceHead}.`;
     if (context instanceof Response) return context;
     const threadId = typeof context === 'string' ? `general:${deps.meta.sourceHead}` : context.threadId;
@@ -58,7 +58,7 @@ async function postAi(req: Request, path: string, deps: AiRouteDeps): Promise<Re
     return json({ answer, threadId, conversation });
   }
   const diff = await deps.git.run(['diff', '--no-ext-diff', '--unified=0', deps.base, deps.meta.sourceHead]);
-  const output = await deps.adapter.run(input.harnessId, `Review the following repository diff. Return a JSON object with findings and lookouts arrays. Finding entries require path, line, side (old or new), body, and severity (info, warning, or error). Lookouts are independent guidance, each requiring path, line, side, and body at a changed line.\n${diff.stdout}`);
+  const output = await deps.adapter.run(input.harnessId, `Analyze only the supplied patch for concrete code defects. Do not inspect the repository, invoke tools, or run a review workflow. Return a JSON object with findings and lookouts arrays. Finding entries require path, line, side (old or new), body, and severity (info, warning, or error). Lookouts are independent guidance, each requiring path, line, side, and body at a changed line.\n${diff.stdout}`, 'patch');
   const parsed = parseReviewResult(output);
   const anchors = changedLines(diff.stdout);
   const renames = new Map((await deps.git.changedFiles(deps.base, deps.meta.sourceHead)).flatMap(file => file.status === 'R' && file.oldPath && file.newPath ? [[file.oldPath, file.newPath] as const] : []));
@@ -79,8 +79,15 @@ async function postAi(req: Request, path: string, deps: AiRouteDeps): Promise<Re
 }
 
 async function lineContext(input: Record<string, unknown>, deps: AiRouteDeps): Promise<{ threadId: string; prompt: string } | Response> {
-  if (typeof input.path !== 'string' || !Number.isInteger(input.line) || Number(input.line) < 1 || (input.side !== undefined && input.side !== 'old' && input.side !== 'new')) return json({ error: 'valid path, line, and optional side required' }, 400);
+  if (typeof input.path !== 'string' || !input.path.trim() || (input.side !== undefined && input.side !== 'old' && input.side !== 'new')) return json({ error: 'valid path and optional side required' }, 400);
   const path = input.path;
+  if (input.line === undefined) {
+    if (input.side !== undefined) return json({ error: 'side requires a line' }, 400);
+    const content = await deps.git.show(deps.meta.sourceHead, path);
+    if (content === null) return json({ error: 'file not found at review head' }, 404);
+    return { threadId: `file:${encodeURIComponent(path)}:${deps.meta.sourceHead}`, prompt: `Repository diff ${deps.base}..${deps.meta.sourceHead}; file ${path} at ${deps.meta.sourceHead}.\n${content.slice(0, 20_000)}` };
+  }
+  if (!Number.isInteger(input.line) || Number(input.line) < 1) return json({ error: 'valid line required' }, 400);
   const line = Number(input.line);
   const side = input.side === 'old' ? 'old' : 'new';
   const anchorCommit = side === 'old' ? deps.base : deps.meta.sourceHead;
@@ -133,15 +140,16 @@ function changedLines(diff: string): Set<string> {
   const anchors = new Set<string>();
   let oldPath = ''; let newPath = '';
   let oldLine = 0; let newLine = 0;
+  let inHunk = false;
   for (const entry of diff.split('\n')) {
-    if (entry.startsWith('diff --git ')) { oldPath = ''; newPath = ''; continue; }
-    if (entry.startsWith('--- a/')) { oldPath = entry.slice(6); continue; }
-    if (entry.startsWith('+++ b/')) { newPath = entry.slice(6); continue; }
+    if (entry.startsWith('diff --git ')) { oldPath = ''; newPath = ''; inHunk = false; continue; }
+    if (!inHunk && entry.startsWith('--- a/')) { oldPath = entry.slice(6); continue; }
+    if (!inHunk && entry.startsWith('+++ b/')) { newPath = entry.slice(6); continue; }
     const header = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(entry);
-    if (header) { oldLine = Number(header[1]); newLine = Number(header[2]); continue; }
-    if (entry.startsWith('+') && !entry.startsWith('+++')) { anchors.add(`${newPath}\0new\0${newLine++}`); continue; }
-    if (entry.startsWith('-') && !entry.startsWith('---')) { anchors.add(`${oldPath}\0old\0${oldLine}`); if (newPath) anchors.add(`${newPath}\0old\0${oldLine}`); oldLine++; continue; }
-    if (entry.startsWith(' ')) { oldLine++; newLine++; }
+    if (header) { oldLine = Number(header[1]); newLine = Number(header[2]); inHunk = true; continue; }
+    if (inHunk && entry.startsWith('+')) { anchors.add(`${newPath}\0new\0${newLine++}`); continue; }
+    if (inHunk && entry.startsWith('-')) { anchors.add(`${oldPath}\0old\0${oldLine}`); if (newPath) anchors.add(`${newPath}\0old\0${oldLine}`); oldLine++; continue; }
+    if (inHunk && entry.startsWith(' ')) { oldLine++; newLine++; }
   }
   return anchors;
 }
