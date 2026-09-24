@@ -15,6 +15,7 @@ export function AiRail() {
   const [busy, setBusy] = useState<'chat' | 'review' | null>(null);
   const [error, setError] = useState('');
   const state = query.data;
+  const aiReviewResult = state?.reviewResult;
   const id = state?.harnesses.some(harness => harness.id === selectedHarnessId) ? selectedHarnessId : state?.harnesses[0]?.id ?? '';
   const threads = Object.entries(state?.threads ?? {});
   const general = state?.threads[`general:${pr?.sourceHead}`] ?? state?.conversation ?? [];
@@ -34,7 +35,10 @@ export function AiRail() {
   const review = async () => {
     if (!id) return;
     setBusy('review'); setError('');
-    try { await api.aiReview(id); await refresh(); }
+    try {
+      await api.aiReview(id);
+      await refresh();
+    }
     catch (cause) { if (cause instanceof Error) setError(cause.message); else throw cause; }
     finally { setBusy(null); }
   };
@@ -53,6 +57,17 @@ export function AiRail() {
       {state && !state.harnesses.length && <p className="ai-empty ai-configure"><strong>Configure a local AI harness</strong><br />Add a signed-in Claude, Codex, or OpenCode CLI to <code>~/.config/criever/config.json</code>.</p>}
       <div className="ai-review-action"><span>Review this diff<small>Findings stay private until you approve them.</small></span><button className="btn sm" disabled={!id || !!busy} onClick={review}>Run AI review</button></div>
       {busy === 'review' && <AiActivity label="Reviewing changes" />}
+      {busy !== 'review' && aiReviewResult && aiReviewResult.head === pr?.sourceHead && <div className="ai-review-result" data-testid="ai/review-result" role="status">
+        <strong>Review complete</strong>
+        <span>{aiReviewResult.findings || aiReviewResult.lookouts ? `${aiReviewResult.findings} findings · ${aiReviewResult.lookouts} look-outs. Results are private beside the changed lines.` : 'No findings or look-outs. Nothing was published.'}</span>
+        {aiReviewResult.first && <button className="btn sm ghost" onClick={() => {
+          const first = aiReviewResult.first;
+          if (!first) return;
+          const { path, side, line } = first;
+          openDiff(path); setAiOpen(false);
+          window.setTimeout(() => document.querySelector(`[data-testid="code/row/${side}/${line}"]`)?.scrollIntoView({ block: 'center' }), 80);
+        }}>View first result in diff</button>}
+      </div>}
     </div>
     {error && <p role="alert" className="ai-error">{error}</p>}
     <div className="ai-content">
@@ -62,7 +77,7 @@ export function AiRail() {
         {busy === 'chat' && <AiActivity label="Thinking about your question" />}
       </section>
       <section className="ai-context-list"><h3>Questions on code</h3>
-        {!contextual.length && <p className="ai-empty">Ask from a file header or use the AI button beside a line. The thread stays with the code.</p>}
+        {!contextual.length && <p className="ai-empty">Ask from a file header or choose private AI after opening a line with +. The thread stays with the code.</p>}
         {contextual.map(([threadId, messages]) => {
           const anchor = threadAnchor(threadId);
           const file = threadId.match(/^file:(.*):[a-f\d]+$/)?.[1];
