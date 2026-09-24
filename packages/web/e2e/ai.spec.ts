@@ -29,8 +29,9 @@ test('AI findings and look-outs remain visible beside their diff lines when chat
   await expect(page.getByTestId('code/row/new/3/gutter')).toBeVisible();
   await page.getByTestId('header').getByRole('button', { name: 'AI', exact: true }).click();
   await expect(page.getByTestId('ai/review-result')).toBeVisible();
-  await page.getByRole('button', { name: 'View first result in diff' }).click();
-  await expect(page.getByTestId('ai-rail')).toHaveCount(0);
+  await page.getByRole('tab', { name: /Findings/ }).click();
+  await page.getByTestId('ai-rail').getByRole('button', { name: /Finding: Potential null access/ }).click();
+  await expect(page.getByTestId('ai-rail')).toBeHidden();
   await expect(finding).toBeVisible();
   await page.reload();
   await page.getByTestId('header').getByRole('button', { name: 'AI', exact: true }).click();
