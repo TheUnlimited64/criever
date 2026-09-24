@@ -21,7 +21,7 @@ export class AiAdapter implements AiRunner {
     const harness = this.harnesses.find(item => item.id === id);
     if (!harness) throw new Error(`Unknown AI harness: ${id}`);
     if (Buffer.byteLength(prompt, 'utf8') > INPUT_LIMIT) throw new Error('AI input exceeded limit');
-    const proc = Bun.spawn([harness.executable ?? defaultExecutable(harness.kind), ...commandArgs(harness.kind, mode)], {
+    const proc = Bun.spawn([harness.executable ?? defaultExecutable(harness.kind), ...commandArgs(harness.kind)], {
       cwd: this.git.root, stdout: 'pipe', stderr: 'pipe', stdin: new Blob([prompt]), env: process.env,
     });
     let timedOut = false;
@@ -64,10 +64,10 @@ function defaultExecutable(kind: HarnessKind): string {
   }
 }
 
-function commandArgs(kind: HarnessKind, mode: 'chat' | 'patch'): string[] {
+function commandArgs(kind: HarnessKind): string[] {
   switch (kind) {
     case 'claude': return ['-p', '--output-format', 'text', '--permission-mode', 'plan'];
-    case 'codex': return ['exec', '--sandbox', 'read-only', '--json', ...(mode === 'patch' ? ['-c', 'features.plugins=false', '--disable', 'multi_agent'] : []), '-'];
+    case 'codex': return ['exec', '--sandbox', 'read-only', '--json', '-c', 'features.plugins=false', '--disable', 'multi_agent', '-'];
     case 'opencode': return ['run', '--format', 'json'];
     default: return assertNever(kind);
   }

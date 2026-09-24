@@ -8,7 +8,7 @@ import { Git } from '../src/git';
 const dirs: string[] = [];
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
-it('confines Codex patch analysis without disabling plugins for ordinary chat', async () => {
+it('confines Codex to one read-only answer for both review and chat', async () => {
   const root = mkdtempSync(join(tmpdir(), 'criever-codex-'));
   dirs.push(root);
   const executable = join(root, 'codex.sh');
@@ -22,6 +22,6 @@ it('confines Codex patch analysis without disabling plugins for ordinary chat', 
   expect(patch).toContain('--sandbox read-only --json -');
   expect(patch).toContain('features.plugins=false');
   expect(patch).toContain('--disable multi_agent');
-  expect(chat).not.toContain('features.plugins=false');
-  expect(chat).not.toContain('--disable multi_agent');
+  expect(chat).toContain('features.plugins=false');
+  expect(chat).toContain('--disable multi_agent');
 });
