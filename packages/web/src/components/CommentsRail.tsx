@@ -5,6 +5,9 @@ import { useComments, usePr } from '../hooks';
 import { useStore } from '../store';
 import { Avatar } from './ThreadCard';
 import { ThreadCardFull } from './ThreadCardFull';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../api';
+import { AiResultsList } from './AiResultsList';
 
 const first = (s: string) => emojify(s.split('\n')[0] ?? '');
 interface RowProps { t: Thread; pip: string; muted?: boolean; agentPip?: boolean; onSelect: (t: Thread) => void }
@@ -31,6 +34,7 @@ const Row = ({ t, pip, muted, agentPip, onSelect, drafts }: RowProps & { drafts:
 
 export function CommentsRail() {
   const c = useComments().data; const local = usePr().data?.kind === 'local'; const { openDiff, setFocusedThread } = useStore();
+  const ai = useQuery({ queryKey: ['ai'], queryFn: api.ai }).data;
   if (!c) return <aside className="pane rail" data-testid="comments" aria-label="Review comments"><div className="pane-hd">Comments</div><div className="empty" role="status">Loading comments…</div></aside>;
   // Resolved wins over authorship (a resolved thread always reads as resolved, no matter who wrote
   // it); among the rest, the agent group wins over "changed since" — the point of the group is to
@@ -54,6 +58,7 @@ export function CommentsRail() {
       <Group id="changed" title={changedSinceHeading(changed)} n={changed.length}>{changed.map(t => <Row onSelect={go} drafts={c.drafts} key={t.root.id} t={t} pip="changed" />)}</Group>
       <Group id="open" title="Open" n={open.length}>{open.map(t => <Row onSelect={go} drafts={c.drafts} key={t.root.id} t={t} pip="open" />)}</Group>
       <Group id="resolved" title="Resolved" n={resolved.length}>{resolved.map(t => <Row onSelect={go} drafts={c.drafts} key={t.root.id} t={t} pip="resolved" muted />)}</Group>
+      <Group id="ai" title="AI findings" n={(ai?.findings.length ?? 0) + (ai?.lookouts.length ?? 0)}><AiResultsList runs={ai?.reviewRuns ?? []} findings={ai?.findings ?? []} lookouts={ai?.lookouts ?? []} /></Group>
     </aside>
   );
 }
