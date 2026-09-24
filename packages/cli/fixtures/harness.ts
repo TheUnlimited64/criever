@@ -15,10 +15,11 @@ const port = +(flag('--port') ?? 4799);
 const staticDir = flag('--static') ?? (existsSync(join(import.meta.dir, '../../web/dist')) ? join(import.meta.dir, '../../web/dist') : null);
 
 const fixtureAi: AiRunner = {
-  list: () => [{ id: 'fixture-harness', name: 'Fixture AI', kind: 'claude' }],
-  run: async (_id, prompt) => {
+  list: () => [{ id: 'fixture-harness', name: 'Fixture AI', kind: 'claude' }, { id: 'fixture-empty', name: 'Fixture AI (no findings)', kind: 'claude' }],
+  run: async (id, prompt) => {
     if (prompt.includes('{"finding":')) return 'Fixture reword';
     if (prompt.includes('\n\nConversation:\n')) return 'Fixture answer';
+    if (id === 'fixture-empty') return JSON.stringify({ findings: [], lookouts: [] });
     return JSON.stringify({
       findings: [
         { path: 'src/api/devices.ts', line: 3, side: 'new', body: 'Potential null access', severity: 'warning' },
@@ -34,6 +35,7 @@ function resetAiState(deps: { store: StateStore }) {
   delete deps.store.state.aiThreads;
   delete deps.store.state.aiFindings;
   delete deps.store.state.aiLookouts;
+  delete deps.store.state.aiReviewResult;
   delete deps.store.state.approvedAiFindings;
 }
 

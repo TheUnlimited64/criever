@@ -26,12 +26,14 @@ export interface PrState {
   aiThreads?: Record<string, AiMessage[]>;
   aiFindings?: AiFinding[];
   aiLookouts?: AiLookout[];
+  aiReviewResult?: AiReviewSummary;
   approvedAiFindings?: string[];
 }
 
 export interface AiMessage { readonly role: 'user' | 'assistant'; readonly content: string }
 export interface AiFinding { readonly id: string; readonly path: string; readonly line: number; readonly side: Side; readonly body: string; readonly severity: 'info' | 'warning' | 'error'; readonly anchorCommit: string }
 export interface AiLookout { readonly id: string; readonly body: string; readonly findingId?: string; readonly path?: string; readonly line?: number; readonly side?: Side; readonly anchorCommit?: string }
+export interface AiReviewSummary { readonly head: string; readonly findings: number; readonly lookouts: number; readonly first: { readonly path: string; readonly side: Side; readonly line: number } | null }
 
 export type AnchorStatus =
   | { status: 'same' }
