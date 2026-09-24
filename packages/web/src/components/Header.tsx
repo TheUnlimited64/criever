@@ -76,6 +76,7 @@ export function Header({ context }: { context?: ReviewHeaderContext }) {
         <button className="panel-button" data-testid="header/panel/code" data-panel="code" data-active={activePanel === 'code'} aria-pressed={activePanel === 'code'} onClick={() => setActivePanel('code')}>Code</button>
         <button className="panel-button" data-testid="header/panel/comments" data-panel="comments" data-active={activePanel === 'comments'} aria-pressed={activePanel === 'comments'} onClick={() => setActivePanel('comments')}>Comments <span>{(comments?.threads.length ?? 0) + drafts}</span></button>
       </div>
+      <button className="btn sm mobile-file-picker" aria-label="Choose file" onClick={() => { setAiOpen(false); setOverlay('palette'); }}>Files</button>
       <button className={`btn sm${aiOpen ? ' on' : ''}`} aria-label="AI" onClick={() => setAiOpen(!aiOpen)}>AI</button>
     </header>
   );

@@ -41,7 +41,7 @@ test('contextual Q&A is separate from general chat and persists after reload', a
   await expect(page.locator('[data-testid^="ai/thread-summary/"]').filter({ hasText: 'Fixture answer' })).toHaveCount(0);
   await page.getByLabel('General question').fill('Summarize the repository change');
   await page.getByRole('button', { name: 'Ask AI', exact: true }).click();
-  const generalChat = page.getByRole('heading', { name: 'General chat' }).locator('..');
+  const generalChat = page.getByRole('heading', { name: 'Conversation' }).locator('..');
   await expect(generalChat).toContainText('Summarize the repository change');
   await expect(generalChat).toContainText('Fixture answer');
   await summary.click();
@@ -50,7 +50,60 @@ test('contextual Q&A is separate from general chat and persists after reload', a
   await openFixtureFile(page);
   await expect(page.locator('[data-testid^="ai/thread/"]').filter({ hasText: 'Fixture answer' })).toBeVisible();
   await page.getByTestId('header').getByRole('button', { name: 'AI', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'General chat' }).locator('..')).toContainText('Summarize the repository change');
+  await expect(page.getByRole('heading', { name: 'Conversation' }).locator('..')).toContainText('Summarize the repository change');
+});
+
+test('file question opens beside the code without guessing a line, then persists at the file header', async ({ page }) => {
+  await page.goto('/');
+  await openFixtureFile(page);
+  await page.getByRole('button', { name: 'Ask AI about file' }).click();
+  await page.getByRole('textbox', { name: 'Private file question' }).fill('What changed in this file?');
+  await page.getByRole('button', { name: 'Send private question' }).click();
+  await expect(page.getByTestId('ai/file-thread')).toContainText('Fixture answer');
+  await page.reload();
+  await openFixtureFile(page);
+  await expect(page.getByTestId('ai/file-thread')).toContainText('What changed in this file?');
+});
+
+test('review and private questions show visible working states while the harness runs', async ({ page }) => {
+  await page.goto('/');
+  await openFixtureFile(page);
+  await expect(page.getByRole('button', { name: 'Ask AI about line 3' })).toHaveCSS('opacity', '1');
+  await page.getByTestId('header').getByRole('button', { name: 'AI', exact: true }).click();
+  let resumeReview = () => {};
+  const reviewPending = new Promise<void>(resolve => { resumeReview = resolve; });
+  await page.route('**/api/ai/review', async route => { await reviewPending; await route.continue(); });
+  await page.getByRole('button', { name: 'Run AI review' }).click();
+  await expect(page.getByRole('status', { name: 'Reviewing changes' })).toBeVisible();
+  resumeReview();
+  await expect(page.getByRole('status', { name: 'Reviewing changes' })).toHaveCount(0);
+  await page.unroute('**/api/ai/review');
+
+  let resumeChat = () => {};
+  const chatPending = new Promise<void>(resolve => { resumeChat = resolve; });
+  await page.route('**/api/ai/chat', async route => { await chatPending; await route.continue(); });
+  await page.getByLabel('General question').fill('What changed?');
+  await page.getByRole('button', { name: 'Ask AI', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Thinking about your question' })).toBeVisible();
+  resumeChat();
+  await expect(page.getByRole('status', { name: 'Thinking about your question' })).toHaveCount(0);
+});
+
+test('a phone reviewer can choose another file without a keyboard', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Choose file' }).click();
+  await page.getByTestId('filePalette/input').fill('devices.ts');
+  await page.getByTestId('filePalette/row/src%2Fapi%2Fdevices.ts').click();
+  await expect(page.getByTestId('code/path')).toContainText('devices.ts');
+});
+
+test('the AI rail explains how to configure a missing harness', async ({ page }) => {
+  await page.route('**/api/ai', async route => route.fulfill({ json: { harnesses: [], threads: {}, conversation: [], findings: [], lookouts: [], approvedIds: [] } }));
+  await page.goto('/');
+  await page.getByTestId('header').getByRole('button', { name: 'AI', exact: true }).click();
+  await expect(page.getByText('Configure a local AI harness')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Run AI review' })).toBeDisabled();
 });
 
 test('general chat shows the current head conversation when an older head has history', async ({ page, request, baseURL }) => {
@@ -59,7 +112,7 @@ test('general chat shows the current head conversation when an older head has hi
   await page.getByTestId('header').getByRole('button', { name: 'AI', exact: true }).click();
   await page.getByLabel('General question').fill('Question at current head');
   await page.getByRole('button', { name: 'Ask AI', exact: true }).click();
-  const chat = page.getByRole('heading', { name: 'General chat' }).locator('..');
+  const chat = page.getByRole('heading', { name: 'Conversation' }).locator('..');
   await expect(chat).toContainText('Question at current head');
   await expect(chat).toContainText('Fixture answer');
   await expect(chat).not.toContainText('Previous head question');
@@ -76,10 +129,29 @@ test('ordinary gutter click still opens the comment composer while AI chat is op
 
 test('historical file view does not offer head-revision AI questions or results', async ({ page }) => {
   await runReview(page);
+  await page.getByRole('button', { name: 'Ask AI about file' }).click();
+  await page.getByRole('textbox', { name: 'Private file question' }).fill('What changed?');
+  await page.getByRole('button', { name: 'Send private question' }).click();
+  await expect(page.getByTestId('ai/file-thread')).toContainText('Fixture answer');
   await page.getByTestId('code/atPicker').selectOption({ label: 'file at merge-base' });
   await expect(page.getByRole('button', { name: 'Ask AI about line 3' })).toHaveCount(0);
   await expect(page.locator('[data-testid^="ai/finding/"]')).toHaveCount(0);
   await expect(page.locator('[data-testid^="ai/lookout/"]')).toHaveCount(0);
+  await expect(page.getByTestId('ai/file-thread')).toHaveCount(0);
+});
+
+test('the line AI touch target remains separate from the comment gutter on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.goto('/');
+  const action = page.getByRole('button', { name: 'Ask AI about line 3' }).first();
+  const box = await action.boundingBox();
+  expect(box?.width).toBeGreaterThanOrEqual(24);
+  expect(box?.height).toBeGreaterThanOrEqual(24);
+  await action.click();
+  await expect(page.getByRole('textbox', { name: 'Private question' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByTestId('code/row/new/3/gutter').first().click({ position: { x: 1, y: 10 } });
+  await expect(page.getByTestId('composer')).toBeVisible();
 });
 
 test('an unsaved reword cannot be approved until the visible wording is saved', async ({ page }) => {
