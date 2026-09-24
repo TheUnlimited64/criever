@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from '../src/git';
 import { StateStore } from '../src/state';
-import { AiAdapter, parseFindings, parseHarnessOutput, type AiRunner } from '../src/ai';
+import { AiAdapter, parseFindings, parseHarnessOutput, parseReviewResult, type AiRunner } from '../src/ai';
 import { aiEndpoint } from '../src/ai-routes';
 import { createHandler } from '../src/server';
 import type { Provider } from '../src/provider';
@@ -77,6 +77,17 @@ describe('AI review HTTP contract', () => {
     expect(sent[1]).not.toContain('const before = 2;');
     expect((await oldLine?.json() as { threadId: string }).threadId).toBe(`a.ts:old:1:${f.base}`);
     expect(Object.keys(await f.store.loadAiThreads())).toEqual([`general:${f.head}`, `a.ts:old:1:${f.base}`]);
+  });
+
+  it('answers a private file question using the whole head-revision file, separately from line threads', async () => {
+    const f = await fixture();
+    const handler = handlerFor(f, 'local', []);
+    const response = await handler(request('POST', '/api/ai/chat', { harnessId: 'fake', message: 'Why did this file change?', path: 'a.ts' }));
+    expect(response.status).toBe(200);
+    expect((await response.json() as { threadId: string }).threadId).toBe(`file:${encodeURIComponent('a.ts')}:${f.head}`);
+    expect(f.inputs[0]).toContain('const changed = true;');
+    expect(f.inputs[0]).not.toContain('const before = 1;');
+    expect(Object.keys(await f.store.loadAiThreads())).toEqual([`file:${encodeURIComponent('a.ts')}:${f.head}`]);
   });
 
   it('preserves both exchanges when questions in one thread complete concurrently', async () => {
@@ -245,5 +256,17 @@ describe('AI review HTTP contract', () => {
     expect(parseHarnessOutput('opencode', '{"type":"text","part":{"type":"text","text":"open answer"}}\n')).toBe('open answer');
     expect(() => parseHarnessOutput('codex', '{malformed json}\n')).toThrow();
     expect(parseHarnessOutput('codex', '{"type":"item.completed","item":{"type":"command_execution","text":"do not surface"}}\n')).toBe('');
+  });
+
+  it('extracts a review object when an agent wraps JSON in a progress note or code fence', () => {
+    const review = '{"findings":[{"path":"a.ts","line":2,"side":"new","body":"Check this","severity":"warning"}],"lookouts":[]}';
+    expect(parseReviewResult(`I checked the diff.\n\n${review}`).findings).toHaveLength(1);
+    expect(parseReviewResult(`I checked the diff.\n\n\`\`\`json\n${review}\n\`\`\``).findings).toHaveLength(1);
+    expect(() => parseReviewResult('I checked the diff and found a problem.')).toThrow('AI review');
+  });
+
+  it('uses the final review when a progress note contains an earlier example object', () => {
+    const final = '{"findings":[{"path":"a.ts","line":2,"side":"new","body":"Real finding","severity":"warning"}],"lookouts":[]}';
+    expect(parseReviewResult(`Example: {"findings":[],"lookouts":[]}\nFinal: ${final}`).findings[0]?.body).toBe('Real finding');
   });
 });
