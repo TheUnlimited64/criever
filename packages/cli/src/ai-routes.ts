@@ -7,7 +7,7 @@ interface AiRouteDeps { readonly adapter: AiRunner; readonly store: StateStore; 
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
 
 export async function aiEndpoint(req: Request, path: string, deps: AiRouteDeps): Promise<Response | null> {
-  if (req.method === 'GET' && path === '/api/ai') return json({ harnesses: deps.adapter.list(), conversation: await deps.store.loadAiConversation(), threads: await deps.store.loadAiThreads(), findings: await deps.store.loadAiFindings(), lookouts: await deps.store.loadAiLookouts(), reviewResult: deps.store.state.aiReviewResult ?? null, approvedIds: deps.store.state.approvedAiFindings ?? [] });
+  if (req.method === 'GET' && path === '/api/ai') return json({ harnesses: deps.adapter.list(), conversation: await deps.store.loadAiConversation(), threads: await deps.store.loadAiThreads(), findings: await deps.store.loadAiFindings(), lookouts: await deps.store.loadAiLookouts(), reviewResult: deps.store.state.aiReviewResult ?? null, reviewRuns: deps.store.loadAiReviewRuns(), approvedIds: deps.store.state.approvedAiFindings ?? [] });
   const approval = /^\/api\/ai\/findings\/([^/]+)\/approve$/.exec(path);
   if (req.method === 'POST' && approval) {
     const draft = await deps.store.approveAiFinding(decodeURIComponent(approval[1] ?? ''), deps.meta.sourceHead);
@@ -57,6 +57,7 @@ async function postAi(req: Request, path: string, deps: AiRouteDeps): Promise<Re
     const conversation = await deps.store.appendAiExchange(threadId, question, { role: 'assistant', content: answer });
     return json({ answer, threadId, conversation });
   }
+  const reviewId = crypto.randomUUID();
   const diff = await deps.git.run(['diff', '--no-ext-diff', '--unified=0', deps.base, deps.meta.sourceHead]);
   const output = await deps.adapter.run(input.harnessId, `Analyze only the supplied patch for concrete code defects. Do not inspect the repository, invoke tools, or run a review workflow. Return a JSON object with findings and lookouts arrays. Finding entries require path, line, side (old or new), body, and severity (info, warning, or error). Lookouts are independent guidance, each requiring path, line, side, and body at a changed line.\n${diff.stdout}`, 'patch');
   const parsed = parseReviewResult(output);
@@ -67,17 +68,14 @@ async function postAi(req: Request, path: string, deps: AiRouteDeps): Promise<Re
   for (const item of parsed.findings) {
     if (!anchors.has(`${item.path}\0${item.side}\0${item.line}`)) continue;
     const id = crypto.randomUUID();
-    findings.push({ ...item, path: renames.get(item.path) ?? item.path, id, anchorCommit: deps.meta.sourceHead });
+    findings.push({ ...item, path: renames.get(item.path) ?? item.path, id, anchorCommit: deps.meta.sourceHead, reviewId });
   }
   for (const item of parsed.lookouts) {
     if (!anchors.has(`${item.path}\0${item.side}\0${item.line}`)) continue;
-    lookouts.push({ ...item, path: renames.get(item.path) ?? item.path, id: crypto.randomUUID(), anchorCommit: deps.meta.sourceHead });
+    lookouts.push({ ...item, path: renames.get(item.path) ?? item.path, id: crypto.randomUUID(), anchorCommit: deps.meta.sourceHead, reviewId });
   }
-  await deps.store.saveAiFindings(findings);
-  await deps.store.saveAiLookouts(lookouts);
   const first = findings[0] ?? lookouts.find(item => item.path && item.side && item.line) ?? null;
-  deps.store.state.aiReviewResult = { head: deps.meta.sourceHead, findings: findings.length, lookouts: lookouts.length, first: first?.path && first.side && first.line ? { path: first.path, side: first.side, line: first.line } : null };
-  await deps.store.save();
+  await deps.store.completeAiReview({ id: reviewId, harnessId: input.harnessId, head: deps.meta.sourceHead, completedAt: new Date().toISOString(), findings: findings.length, lookouts: lookouts.length, first: first?.path && first.side && first.line ? { path: first.path, side: first.side, line: first.line } : null }, findings, lookouts);
   return json({ findings, lookouts });
 }
 
@@ -108,35 +106,31 @@ async function oldSidePath(path: string, deps: AiRouteDeps): Promise<string> {
 }
 
 async function mutateAiItem(req: Request, collection: string, id: string, deps: AiRouteDeps): Promise<Response> {
-  const findings = [...await deps.store.loadAiFindings()];
-  const lookouts = [...await deps.store.loadAiLookouts()];
-  const items = collection === 'findings' ? findings : lookouts;
-  const index = items.findIndex(item => item.id === id);
-  if (index < 0) return json({ error: 'item not found' }, 404);
-  if (req.method === 'DELETE') {
-    items.splice(index, 1);
+  const body: unknown = req.method === 'DELETE' ? null : await req.json().catch(() => null);
+  if (req.method !== 'DELETE' && (typeof body !== 'object' || body === null || !('body' in body) || typeof body.body !== 'string' || !body.body.trim())) return json({ error: 'body required' }, 400);
+  const text = body && typeof body === 'object' && 'body' in body && typeof body.body === 'string' ? body.body.trim() : '';
+  return deps.store.mutateAiCollections((findings, lookouts) => {
+    const items = collection === 'findings' ? findings : lookouts;
+    const index = items.findIndex(item => item.id === id);
+    if (index < 0) return json({ error: 'item not found' }, 404);
+    if (req.method === 'DELETE') {
+      items.splice(index, 1);
+      if (collection === 'findings') for (let i = lookouts.length - 1; i >= 0; i--) if (lookouts[i]?.findingId === id) lookouts.splice(i, 1);
+      return json({ ok: true });
+    }
     if (collection === 'findings') {
-      await deps.store.saveAiFindings(findings);
-      await deps.store.saveAiLookouts(lookouts.filter(item => item.findingId !== id));
-    } else await deps.store.saveAiLookouts(lookouts);
-    return json({ ok: true });
-  }
-  const body = await req.json().catch(() => null) as unknown;
-  if (typeof body !== 'object' || body === null || !('body' in body) || typeof body.body !== 'string' || !body.body.trim()) return json({ error: 'body required' }, 400);
-  if (collection === 'findings') {
-    const current = findings.find(item => item.id === id);
+      const current = findings[index];
+      if (!current) return json({ error: 'item not found' }, 404);
+      const edited = { ...current, body: text };
+      findings.splice(index, 1, edited);
+      return json({ finding: edited });
+    }
+    const current = lookouts[index];
     if (!current) return json({ error: 'item not found' }, 404);
-    const edited = { ...current, body: body.body.trim() };
-    findings.splice(index, 1, edited);
-    await deps.store.saveAiFindings(findings);
-    return json({ finding: edited });
-  }
-  const current = lookouts.find(item => item.id === id);
-  if (!current) return json({ error: 'item not found' }, 404);
-  const edited = { ...current, body: body.body.trim() };
-  lookouts.splice(index, 1, edited);
-  await deps.store.saveAiLookouts(lookouts);
-  return json({ [collection === 'findings' ? 'finding' : 'lookout']: edited });
+    const edited = { ...current, body: text };
+    lookouts.splice(index, 1, edited);
+    return json({ lookout: edited });
+  });
 }
 
 function changedLines(diff: string): Set<string> {
