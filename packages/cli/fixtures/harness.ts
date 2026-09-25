@@ -18,8 +18,10 @@ const fixtureAi: AiRunner = {
   list: () => [{ id: 'fixture-harness', name: 'Fixture AI', kind: 'claude' }, { id: 'fixture-empty', name: 'Fixture AI (no findings)', kind: 'claude' }, { id: 'fixture-old', name: 'Fixture AI (old-side)', kind: 'claude' }],
   run: async (id, prompt) => {
     if (prompt.includes('{"finding":')) return 'Fixture reword';
-    if (prompt.includes('Render markdown')) return 'A **bold answer** with `Row.from(QuerySolution)` and [source](https://example.test/source).\n\n- first check\n- second check\n- [unsafe](javascript:alert(1))';
-    if (prompt.includes('\n\nConversation:\n')) return 'Fixture answer';
+    if (prompt.includes('Show final answer only')) return 'I’ll inspect the code first.\n<answer>Yes. Full IRIs must use exact IRI lookup.</answer>';
+    if (prompt.includes('Show unmarked response')) return 'I’ll inspect the code first.';
+    if (prompt.includes('Render markdown')) return '<answer>A **bold answer** with `Row.from(QuerySolution)` and [source](https://example.test/source).\n\n- first check\n- second check\n- [unsafe](javascript:alert(1))</answer>';
+    if (prompt.includes('\n\nConversation:\n')) return '<answer>Fixture answer</answer>';
     if (id === 'fixture-empty') return JSON.stringify({ findings: [], lookouts: [] });
     if (id === 'fixture-old') return JSON.stringify({ findings: [{ path: 'src/api/devices.ts', line: 4, side: 'old', body: 'Old-side regression', severity: 'warning' }], lookouts: [] });
     return JSON.stringify({
