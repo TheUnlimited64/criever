@@ -1,5 +1,5 @@
 import type { AiFinding, AiLookout, AiMessage, ReviewMeta } from '@criever/shared';
-import { conversationPrompt, parseReviewResult, type AiRunner } from './ai';
+import { conversationPrompt, parseReviewResult, reviewPrompt, type AiRunner } from './ai';
 import type { Git } from './git';
 import type { StateStore } from './state';
 
@@ -60,11 +60,19 @@ async function postAi(req: Request, path: string, deps: AiRouteDeps): Promise<Re
     return json({ answer, threadId, conversation });
   }
   const reviewId = crypto.randomUUID();
-  const diff = await deps.git.run(['diff', '--no-ext-diff', '--unified=0', deps.base, deps.meta.sourceHead]);
-  const output = await deps.adapter.run(input.harnessId, `Analyze only the supplied patch for concrete code defects. Do not inspect the repository, invoke tools, or run a review workflow. Return a JSON object with findings and lookouts arrays. Finding entries require path, line, side (old or new), body, and severity (info, warning, or error). Lookouts are independent guidance, each requiring path, line, side, and body at a changed line.\n${diff.stdout}`, 'patch');
+  const diff = await deps.git.run(['diff', '--no-ext-diff', '--unified=3', deps.base, deps.meta.sourceHead]);
+  const changedFiles = await deps.git.changedFiles(deps.base, deps.meta.sourceHead);
+  const harness = deps.adapter.list().find(item => item.id === input.harnessId);
+  const revisionRefs = harness?.kind === 'opencode' ? changedFiles.flatMap(file => [
+    ...(file.oldPath ? [{ revision: deps.base, path: file.oldPath }] : []),
+    ...(file.newPath ? [{ revision: deps.meta.sourceHead, path: file.newPath }] : []),
+  ]) : [];
+  const snapshots = await Promise.all(revisionRefs.map(async ref => ({ ...ref, content: await deps.git.show(ref.revision, ref.path) })));
+  const patch = snapshots.length ? `${diff.stdout}\nREVISION SNAPSHOTS:\n${JSON.stringify(snapshots)}` : diff.stdout;
+  const output = await deps.adapter.run(input.harnessId, reviewPrompt(patch, deps.base, deps.meta.sourceHead), 'patch');
   const parsed = parseReviewResult(output);
   const anchors = changedLines(diff.stdout);
-  const renames = new Map((await deps.git.changedFiles(deps.base, deps.meta.sourceHead)).flatMap(file => file.status === 'R' && file.oldPath && file.newPath ? [[file.oldPath, file.newPath] as const] : []));
+  const renames = new Map(changedFiles.flatMap(file => file.status === 'R' && file.oldPath && file.newPath ? [[file.oldPath, file.newPath] as const] : []));
   const findings: AiFinding[] = [];
   const lookouts: AiLookout[] = [];
   for (const item of parsed.findings) {
