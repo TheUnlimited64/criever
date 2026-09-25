@@ -53,7 +53,9 @@ async function postAi(req: Request, path: string, deps: AiRouteDeps): Promise<Re
     const promptContext = typeof context === 'string' ? context : context.prompt;
     const question: AiMessage = { role: 'user', content: input.message.trim() };
     const messages: AiMessage[] = [...(await deps.store.loadAiThreads())[threadId] ?? [], question];
-    const answer = await deps.adapter.run(input.harnessId, conversationPrompt(messages, promptContext));
+    const output = await deps.adapter.run(input.harnessId, conversationPrompt(messages, promptContext));
+    const answer = [...output.matchAll(/<answer>([\s\S]*?)<\/answer>/g)].at(-1)?.[1]?.trim();
+    if (!answer) return json({ error: 'AI did not provide a final answer; please try again.' }, 502);
     const conversation = await deps.store.appendAiExchange(threadId, question, { role: 'assistant', content: answer });
     return json({ answer, threadId, conversation });
   }

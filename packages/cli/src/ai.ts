@@ -130,7 +130,7 @@ export function parseFindings(raw: string): readonly AiFindingCandidate[] {
 }
 
 export function conversationPrompt(messages: readonly AiMessage[], context: string): string {
-  return `${context}\n\nConversation:\n${messages.map(message => `${message.role}: ${message.content}`).join('\n')}`;
+  return `${context}\n\nConversation:\n${messages.map(message => `${message.role}: ${message.content}`).join('\n')}\n\nGive your final reply inside <answer>...</answer>. Keep progress notes and planning outside the answer tags.`;
 }
 
 function assertNever(value: never): never { throw new Error(`Unsupported value: ${String(value)}`); }
