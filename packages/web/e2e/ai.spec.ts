@@ -26,10 +26,15 @@ test('AI findings and look-outs remain visible beside their diff lines when chat
   await page.getByRole('button', { name: 'Close AI chat' }).click();
   await expect(finding).toBeVisible();
   await expect(lookout).toBeVisible();
+  await expect(lookout).toContainText('Look at this');
+  await expect(lookout.getByRole('button', { name: 'Approve draft' })).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('look-at-this-inline.png') });
   await expect(page.getByTestId('code/row/new/3/gutter')).toBeVisible();
   await page.getByTestId('header').getByRole('button', { name: 'AI', exact: true }).click();
   await expect(page.getByTestId('ai/review-result')).toBeVisible();
   await page.getByRole('tab', { name: /Findings/ }).click();
+  await expect(page.getByTestId('ai-rail').getByRole('button', { name: /Look at this: Check authorization/ })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('look-at-this-rail.png') });
   await page.getByTestId('ai-rail').getByRole('button', { name: /Finding: Potential null access/ }).click();
   await expect(page.getByTestId('ai-rail')).toBeHidden();
   await expect(finding).toBeVisible();

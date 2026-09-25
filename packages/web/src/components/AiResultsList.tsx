@@ -29,9 +29,9 @@ export function AiResultsList({ runs, findings, lookouts }: { runs: readonly AiR
         {matchedFindings.map(item => <button className="ai-result-item" data-testid={`ai/result/${item.id}`} key={item.id} onClick={() => jump(item.path, item.side, item.line, item.anchorCommit)} aria-label={`Finding: ${item.body}`}>
           <span className="ai-result-meta">Finding · {item.severity} · {item.path}:{item.line}</span><span className="ai-result-body">{item.body}</span>
         </button>)}
-        {matchedLookouts.map(item => item.path && item.side && item.line ? <button className="ai-result-item lookout" data-testid={`ai/result/${item.id}`} key={item.id} onClick={() => { if (item.path && item.side && item.line) jump(item.path, item.side, item.line, item.anchorCommit); }} aria-label={`Look-out: ${item.body}`}>
-          <span className="ai-result-meta">Look-out · {item.path}:{item.line}</span><span className="ai-result-body">{item.body}</span>
-        </button> : <div className="ai-result-item lookout" data-testid={`ai/result/${item.id}`} key={item.id}><span className="ai-result-meta">Review look-out</span><span className="ai-result-body">{item.body}</span></div>)}
+        {matchedLookouts.map(item => item.path && item.side && item.line ? <button className="ai-result-item lookout" data-testid={`ai/result/${item.id}`} key={item.id} onClick={() => { if (item.path && item.side && item.line) jump(item.path, item.side, item.line, item.anchorCommit); }} aria-label={`Look at this: ${item.body}`}>
+          <span className="ai-result-meta">Look at this · {item.path}:{item.line}</span><span className="ai-result-body">{item.body}</span>
+        </button> : <div className="ai-result-item lookout" data-testid={`ai/result/${item.id}`} key={item.id}><span className="ai-result-meta">Look at this</span><span className="ai-result-body">{item.body}</span></div>)}
       </section>;
     })}
   </div>;

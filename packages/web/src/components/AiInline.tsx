@@ -40,7 +40,7 @@ export function AiFindingCard({ finding, harnessId, onChange }: { finding: AiFin
 
 export function AiLookoutCard({ lookout }: { lookout: AiLookout }) {
   return <article className="ai-guidance lookout" data-testid={`ai/lookout/${lookout.id}`}>
-    <span>{lookout.path ? `${lookout.path}:${lookout.line ?? '—'} · AI look-out` : 'Review look-out'}</span><p>{lookout.body}</p>
+    <span>{lookout.path ? `Look at this · ${lookout.path}:${lookout.line ?? '—'}` : 'Look at this'}</span><p>{lookout.body}</p>
   </article>;
 }
 
@@ -52,7 +52,7 @@ export function AiThreadCard({ threadId, messages }: { threadId: string; message
   const revision = threadId.match(/:([a-f\d]+)$/)?.[1];
   const current = !!pr && revision === (anchor?.side === 'old' ? pr.mergeBase : pr.sourceHead);
   return <article className="ai-thread-inline" data-testid={`ai/thread/${encodeURIComponent(threadId)}`}>
-    <span>Private Q&amp;A</span>
+    <header className="ai-thread-heading"><strong>Private conversation</strong>{target && <code title={target.path}>{target.path}{anchor ? `:${anchor.line}` : ''}</code>}</header>
     {messages.map((message, index) => <AiMessageView message={message} key={`${message.role}-${index}`} />)}
     {target && current && <AiQuestionComposer target={target} followUp onCancel={() => {}} onSent={() => {}} />}
     {target && pr && !current && <p className="ai-thread-history">Earlier revision · follow-ups are available on current-revision threads only.</p>}
@@ -83,11 +83,11 @@ export function AiQuestionComposer({ target, onCancel, onSent, followUp = false 
   };
   const isLine = 'line' in target;
   return <section className={`ai-question${followUp ? ' follow-up' : ''}`} aria-label={`Private Q&A about ${target.path}${isLine ? `:${target.line}` : ''}`}>
-    {!followUp && <div className="ai-question-heading"><strong>{isLine ? `Ask about line ${target.line}` : 'Ask about this file'}</strong><span>Private · not a review comment</span></div>}
-    <label className="ai-question-label">{followUp ? 'Follow-up question' : isLine ? 'Private question' : 'Private file question'}<textarea autoFocus={!followUp} aria-label={followUp ? 'Follow-up question' : isLine ? 'Private question' : 'Private file question'} placeholder={followUp ? 'Ask a follow-up about this code…' : 'What would you like to know?'} value={question} onChange={event => { questionVersion.current++; setQuestion(event.target.value); }} /></label>
+    {!followUp && <header className="ai-question-heading"><strong>{isLine ? `Ask about line ${target.line}` : 'Ask about this file'}</strong><code title={target.path}>{target.path}{isLine ? `:${target.line}` : ''}</code></header>}
+    <label className="ai-question-label"><span className="sr-only">{followUp ? 'Follow-up question' : isLine ? 'Private question' : 'Private file question'}</span><textarea autoFocus={!followUp} aria-label={followUp ? 'Follow-up question' : isLine ? 'Private question' : 'Private file question'} placeholder={followUp ? 'Ask a follow-up about this code…' : 'Ask a question about this code…'} value={question} onChange={event => { questionVersion.current++; setQuestion(event.target.value); }} /></label>
     {error && <p role="alert" className="ai-error">{error}</p>}
     {busy && <AiActivity label="Thinking about your question" />}
-    <div className="ai-actions"><button className="btn sm primary" aria-label={followUp ? 'Send follow-up' : 'Send private question'} disabled={busy || !question.trim()} onClick={submit}>{followUp ? 'Send follow-up' : 'Ask privately'}</button>{!followUp && <button className="btn sm ghost" onClick={onCancel}>Cancel</button>}</div>
+    <div className="ai-question-footer">{!followUp && <small>Private to this review · not a PR comment</small>}<div className="ai-actions"><button className="btn sm ai-submit" aria-label={followUp ? 'Send follow-up' : 'Send private question'} disabled={busy || !question.trim()} onClick={submit}>{followUp ? 'Send follow-up' : 'Ask privately'}</button>{!followUp && <button className="btn sm ghost" onClick={onCancel}>Cancel</button>}</div></div>
   </section>;
 }
 
