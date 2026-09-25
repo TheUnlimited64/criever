@@ -26,7 +26,7 @@ const fixture = async () => {
   const head = await sh(root, ['rev-parse', 'HEAD']);
   const store = new StateStore(join(root, 'private-state.json')); await store.load();
   const inputs: string[] = [];
-  const runner: AiRunner = { list: () => [{ id: 'fake', name: 'Fake', kind: 'codex' }], run: async (_id, input) => { inputs.push(input); return '{"findings":[{"path":"a.ts","line":2,"side":"new","body":"Check this","severity":"warning"}],"lookouts":[{"path":"a.ts","line":2,"side":"new","body":"Watch regressions"}]}'; } };
+  const runner: AiRunner = { list: () => [{ id: 'fake', name: 'Fake', kind: 'codex' }], run: async (_id, input) => { inputs.push(input); const result = '{"findings":[{"path":"a.ts","line":2,"side":"new","body":"Check this","severity":"warning"}],"lookouts":[{"path":"a.ts","line":2,"side":"new","body":"Watch regressions"}]}'; return input.includes('\n\nConversation:\n') ? `<answer>${result}</answer>` : result; } };
   const meta: ReviewMeta = { id: 42, title: 'Test', url: null, author: 'you', description: null, sourceBranch: 'feature', sourceHead: head, destinationBranch: 'main', destinationHead: base };
   return { root, base, head, git: new Git(root), store, runner, inputs, meta };
 };
@@ -67,7 +67,7 @@ describe('AI review HTTP contract', () => {
 
   it('supports general chat, and keeps old-side questions in the base revision thread', async () => {
     const f = await fixture(); const sent: string[] = [];
-    const adapter: AiRunner = { ...f.runner, run: async (_id, prompt) => { sent.push(prompt); return 'reply'; } };
+    const adapter: AiRunner = { ...f.runner, run: async (_id, prompt) => { sent.push(prompt); return '<answer>reply</answer>'; } };
     const deps = { adapter, store: f.store, git: f.git, meta: f.meta, base: f.base };
     const general = await aiEndpoint(request('POST', '/api/ai/chat', { harnessId: 'fake', message: 'General question' }), '/api/ai/chat', deps);
     expect(general?.status).toBe(200);
@@ -100,7 +100,7 @@ describe('AI review HTTP contract', () => {
     const first = aiEndpoint(request('POST', '/api/ai/chat', { harnessId: 'fake', message: 'First question' }), '/api/ai/chat', deps);
     const second = aiEndpoint(request('POST', '/api/ai/chat', { harnessId: 'fake', message: 'Second question' }), '/api/ai/chat', deps);
     await started;
-    pending[0]?.('First answer'); pending[1]?.('Second answer');
+    pending[0]?.('<answer>First answer</answer>'); pending[1]?.('<answer>Second answer</answer>');
     const responses = await Promise.all([first, second]);
     expect(responses.map(response => response?.status)).toEqual([200, 200]);
     expect((await f.store.loadAiThreads())[`general:${f.head}`]?.map(message => message.content)).toEqual(['First question', 'First answer', 'Second question', 'Second answer']);
@@ -112,7 +112,7 @@ describe('AI review HTTP contract', () => {
     let bothStarted = () => {};
     const started = new Promise<void>(resolve => { bothStarted = resolve; });
     const runner: AiRunner = { ...f.runner, run: async (_id, prompt) => {
-      if (prompt.includes('\n\nConversation:\n')) return '**Chat answered**';
+      if (prompt.includes('\n\nConversation:\n')) return '<answer>**Chat answered**</answer>';
       return new Promise<string>(resolve => { pending.push(resolve); if (pending.length === 2) bothStarted(); });
     } };
     const deps = { adapter: runner, store: f.store, git: f.git, meta: f.meta, base: f.base };
@@ -262,7 +262,7 @@ describe('AI review HTTP contract', () => {
     const runner: AiRunner = { ...f.runner, run: async (_id, prompt) => {
       prompts.push(prompt);
       if (prompt.includes('{"finding":')) return 'Clearer wording';
-      if (prompt.includes('\n\nConversation:\n')) return 'Old-side answer';
+      if (prompt.includes('\n\nConversation:\n')) return '<answer>Old-side answer</answer>';
       return JSON.stringify({ findings: [{ path: 'old-name.ts', line: 1, side: 'old', body: 'Old-side concern', severity: 'warning' }], lookouts: [{ path: 'old-name.ts', line: 1, side: 'old', body: 'Review rename' }] });
     } };
     const deps = { adapter: runner, store: f.store, git: f.git, meta: f.meta, base: f.base };
