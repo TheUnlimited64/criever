@@ -93,6 +93,52 @@ test('an old-side result navigates after a delayed diff loads in split view', as
   await expect(page.getByTestId('code/row/old/4/gutter').locator('..')).toHaveClass(/cursor/);
 });
 
+test('a contextual summary navigates after its destination diff loads', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('files/file/src%2Fapi%2Fdevices.ts').click();
+  await page.getByTestId('code/row/new/3/gutter').click();
+  await page.getByRole('button', { name: 'Ask AI privately' }).click();
+  await page.getByRole('textbox', { name: 'Private question', exact: true }).fill('Explain this line');
+  await page.getByRole('button', { name: 'Send private question' }).click();
+  await expect(page.locator('[data-testid^="ai/thread/"]').first()).toContainText('Fixture answer');
+  await page.getByTestId('files/file/package.json').click();
+  await expect(page.getByTestId('code/path')).toContainText('package.json');
+  await page.getByTestId('header').getByRole('button', { name: 'AI', exact: true }).click();
+  let release = () => {};
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/diff?**', async route => {
+    if (new URL(route.request().url()).searchParams.get('path') === 'src/api/devices.ts') await blocked;
+    await route.continue();
+  });
+  await page.clock.install();
+  await page.locator('[data-testid^="ai/thread-summary/"]').first().click();
+  await page.clock.runFor(120);
+  release();
+  const row = page.getByTestId('code/row/new/3/gutter').locator('..');
+  await expect(row).toHaveClass(/cursor/);
+  await expect(row).toBeInViewport();
+});
+
+test('a historical file conversation stays readable after selecting its summary', async ({ page }) => {
+  await page.route('**/api/ai', async route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const response = await route.fetch();
+    const state = await response.json();
+    state.threads['file:src%2Fapi%2Fdevices.ts:0000000000000000000000000000000000000000'] = [
+      { role: 'user', content: 'Historical file question' },
+      { role: 'assistant', content: 'Historical file answer' },
+    ];
+    await route.fulfill({ response, json: state });
+  });
+  await page.goto('/');
+  await page.getByTestId('header').getByRole('button', { name: 'AI', exact: true }).click();
+  await page.getByText('Historical file question').click();
+  const history = page.getByTestId('ai/file-thread');
+  await expect(history).toContainText('Historical file answer');
+  await expect(history).toContainText('Earlier revision');
+  await expect(history.getByRole('textbox', { name: 'Follow-up question' })).toHaveCount(0);
+});
+
 test('a finding from an earlier revision stays in the rail with an explanation', async ({ page }) => {
   await page.route('**/api/ai', async route => {
     if (route.request().method() !== 'GET') return route.continue();
