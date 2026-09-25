@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { Anchor, Draft, PrState } from '@criever/shared';
+import type { AiFinding, AiLookout, AiMessage, AiReviewRun, Anchor, Draft, PrState } from '@criever/shared';
 
 export const emptyState = (): PrState => ({ drafts: [], anchors: {}, viewed: {} });
 
@@ -28,6 +28,16 @@ export class StateStore {
   }
 
   private writing: Promise<void> = Promise.resolve();
+
+  private mutateAi<T>(change: () => T): Promise<T> {
+    const next = this.writing.catch(() => {}).then(async () => {
+      const value = change();
+      await this.writeNow();
+      return value;
+    });
+    this.writing = next.then(() => {}, () => {});
+    return next;
+  }
 
   /** Atomic write: .tmp then rename. Overlapping calls are serialized — the same .tmp path cannot be renamed twice. */
   save(): Promise<void> {
@@ -63,4 +73,58 @@ export class StateStore {
     await this.save();
   }
   async setLastSeenHead(h: string) { this.state.lastSeenHead = h; await this.save(); }
+  async loadAiConversation(): Promise<readonly AiMessage[]> { return this.state.aiConversation ?? []; }
+  async saveAiConversation(messages: readonly AiMessage[]): Promise<void> { this.state.aiConversation = [...messages]; await this.save(); }
+  async loadAiThreads(): Promise<Readonly<Record<string, readonly AiMessage[]>>> { return this.state.aiThreads ?? {}; }
+  async saveAiThread(id: string, messages: readonly AiMessage[]): Promise<void> { this.state.aiThreads = { ...this.state.aiThreads, [id]: [...messages] }; await this.save(); }
+  appendAiExchange(id: string, question: AiMessage, answer: AiMessage): Promise<readonly AiMessage[]> {
+    return this.mutateAi(() => {
+      const messages = [...(this.state.aiThreads?.[id] ?? []), question, answer];
+      this.state.aiThreads = { ...this.state.aiThreads, [id]: messages };
+      return messages;
+    });
+  }
+  loadAiReviewRuns(): readonly AiReviewRun[] {
+    if (this.state.aiReviewRuns) return this.state.aiReviewRuns;
+    const legacy = this.state.aiReviewResult;
+    return legacy ? [{ ...legacy, id: 'legacy', harnessId: '', completedAt: '' }] : [];
+  }
+  completeAiReview(run: AiReviewRun, findings: readonly AiFinding[], lookouts: readonly AiLookout[]): Promise<void> {
+    return this.mutateAi(() => {
+      this.state.aiReviewRuns = [...this.loadAiReviewRuns(), run];
+      this.state.aiFindings = [...(this.state.aiFindings ?? []), ...findings];
+      this.state.aiLookouts = [...(this.state.aiLookouts ?? []), ...lookouts];
+      this.state.aiReviewResult = run;
+    });
+  }
+  mutateAiCollections<T>(change: (findings: AiFinding[], lookouts: AiLookout[]) => T): Promise<T> {
+    return this.mutateAi(() => {
+      const findings = [...(this.state.aiFindings ?? [])];
+      const lookouts = [...(this.state.aiLookouts ?? [])];
+      const value = change(findings, lookouts);
+      this.state.aiFindings = findings;
+      this.state.aiLookouts = lookouts;
+      return value;
+    });
+  }
+  async loadAiFindings(): Promise<readonly AiFinding[]> { return this.state.aiFindings ?? []; }
+  async saveAiFindings(findings: readonly AiFinding[]): Promise<void> { this.state.aiFindings = [...findings]; await this.save(); }
+  async loadAiLookouts(): Promise<readonly AiLookout[]> { return this.state.aiLookouts ?? []; }
+  async saveAiLookouts(lookouts: readonly AiLookout[]): Promise<void> { this.state.aiLookouts = [...lookouts]; await this.save(); }
+  async approveAiFinding(id: string, currentHead: string): Promise<Draft | null> {
+    if (!this.state.aiFindings?.some(finding => finding.id === id)) return null;
+    const approved = this.state.approvedAiFindings ?? [];
+    if (approved.includes(id)) return null;
+    const finding = this.state.aiFindings.find(item => item.id === id);
+    if (!finding || finding.anchorCommit !== currentHead) return null;
+    this.state.approvedAiFindings = [...approved, id];
+    try {
+      const draft = await this.addDraft({ path: finding.path, line: finding.line, side: finding.side, body: finding.body, anchorCommit: finding.anchorCommit });
+      await this.save();
+      return draft;
+    } catch (error) {
+      this.state.approvedAiFindings = approved;
+      throw error;
+    }
+  }
 }

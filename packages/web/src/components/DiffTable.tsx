@@ -3,7 +3,7 @@ import type { DiffLine, FileDiff, Side } from '@criever/shared';
 import { highlightLine } from './highlight';
 
 export interface RowExtra { afterLine: { side: Side; line: number }; node: ReactNode; key: string }
-interface Common { path: string; extras: RowExtra[]; cursorLine: { side: Side; line: number } | null; onGutterClick: (side: Side, line: number, shiftKey: boolean) => void; selection?: { side: Side; from: number; to: number } | null }
+interface Common { path: string; extras: RowExtra[]; cursorLine: { side: Side; line: number } | null; onGutterClick: (side: Side, line: number, shiftKey: boolean) => void; canComment?: boolean; selection?: { side: Side; from: number; to: number } | null }
 
 const sideOf = (l: DiffLine): { side: Side; line: number } => l.kind === 'del' ? { side: 'old', line: l.oldNo! } : { side: 'new', line: l.newNo! };
 const inSel = (c: Common, s: { side: Side; line: number }) => !!c.selection && c.selection.side === s.side && s.line >= c.selection.from && s.line <= c.selection.to;
@@ -18,7 +18,7 @@ function Row({ l, c }: { l: DiffLine; c: Common }) {
   return (
     <tr className={cls} data-testid={`code/row/${s.side}/${s.line}`} data-side={s.side} data-line={s.line}>
       <td className="ln o">{l.oldNo ?? ''}</td><td className="ln">{l.newNo ?? ''}</td>
-      <td className="g" data-testid={`code/row/${s.side}/${s.line}/gutter`} onClick={e => c.onGutterClick(s.side, s.line, e.shiftKey)}>{l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ''}</td>
+      <td className="g" data-testid={`code/row/${s.side}/${s.line}/gutter`} onClick={e => c.onGutterClick(s.side, s.line, e.shiftKey)}>{c.canComment !== false && <button className={`gutter-action${l.kind === 'context' ? ' context' : ''}`} aria-label={`Comment or ask AI about line ${s.line}`} onClick={e => { e.stopPropagation(); c.onGutterClick(s.side, s.line, e.shiftKey); }}>{l.kind === 'del' ? '−' : '+'}</button>}</td>
       <td className="src" dangerouslySetInnerHTML={{ __html: highlightLine(l.text, c.path) || ' ' }} />
     </tr>
   );
@@ -60,14 +60,15 @@ function SplitRows({ lines, c }: { lines: DiffLine[]; c: Common }) {
     return (
       <>
         <td className={`ln ${side === 'old' ? 'o' : ''}`}>{lineNo}</td>
-        <td className={`g ${l.kind}`} data-testid={`code/row/${side}/${lineNo}/gutter`} onClick={e => c.onGutterClick(side, lineNo, e.shiftKey)}>{l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ''}</td>
+        <td className={`g ${l.kind}`} data-testid={`code/row/${side}/${lineNo}/gutter`} onClick={e => c.onGutterClick(side, lineNo, e.shiftKey)}>{c.canComment !== false && <button className={`gutter-action${l.kind === 'context' ? ' context' : ''}`} aria-label={`Comment or ask AI about line ${lineNo}`} onClick={e => { e.stopPropagation(); c.onGutterClick(side, lineNo, e.shiftKey); }}>{l.kind === 'del' ? '−' : '+'}</button>}</td>
         <td className={`src ${l.kind}`} dangerouslySetInnerHTML={{ __html: highlightLine(l.text, c.path) || ' ' }} />
       </>
     );
   };
   return <>{pairs.map((pr, i) => {
     const s = pr.right ? sideOf(pr.right) : pr.left ? sideOf(pr.left) : null;
-    const cls = ['line', 'split', s && c.cursorLine?.side === s.side && c.cursorLine.line === s.line ? 'cursor' : '', s && inSel(c, s) ? 'sel' : ''].join(' ');
+    const positions = [pr.left && { side: 'old' as Side, line: pr.left.oldNo! }, pr.right && { side: 'new' as Side, line: pr.right.newNo! }].filter(position => position !== null);
+    const cls = ['line', 'split', positions.some(position => c.cursorLine?.side === position.side && c.cursorLine.line === position.line) ? 'cursor' : '', positions.some(position => inSel(c, position)) ? 'sel' : ''].join(' ');
     return (
       <Fragment key={i}>
         <tr className={cls} data-testid={s ? `code/row/${s.side}/${s.line}` : undefined} data-side={s?.side} data-line={s?.line}>{cell(pr.left, 'old')}{cell(pr.right, 'new')}</tr>
@@ -88,7 +89,7 @@ export function FileTable(p: Common & { content: string }) {
         return (
           <Fragment key={i}>
             <tr className={`line ${p.cursorLine?.line === line ? 'cursor' : ''} ${inSel(p, s) ? 'sel' : ''}`} data-testid={`code/row/new/${line}`} data-side="new" data-line={line}>
-              <td className="ln">{line}</td><td className="g" onClick={e => p.onGutterClick('new', line, e.shiftKey)} /><td className="src" dangerouslySetInnerHTML={{ __html: highlightLine(t, p.path) || ' ' }} />
+              <td className="ln">{line}</td><td className="g" onClick={e => p.onGutterClick('new', line, e.shiftKey)}>{p.canComment !== false && <button className="gutter-action context" aria-label={`Comment or ask AI about line ${line}`} onClick={e => { e.stopPropagation(); p.onGutterClick('new', line, e.shiftKey); }}>+</button>}</td><td className="src" dangerouslySetInnerHTML={{ __html: highlightLine(t, p.path) || ' ' }} />
             </tr>
             {extrasAfter(p.extras, s, 3)}
           </Fragment>

@@ -1,4 +1,7 @@
-import type { ChangedFile, CommentsResponse, DiffResponse, Draft, PrInfo, PublishResult, SearchHit, Side, TreeEntry, VscodeOpenResponse } from '@criever/shared';
+import type { AiFinding, AiLookout, AiMessage, AiReviewRun, AiReviewSummary, ChangedFile, CommentsResponse, DiffResponse, Draft, PrInfo, PublishResult, SearchHit, Side, TreeEntry, VscodeOpenResponse } from '@criever/shared';
+
+export type { AiFinding, AiLookout, AiMessage } from '@criever/shared';
+export interface AiState { harnesses: { id: string; name: string; kind: string }[]; conversation: AiMessage[]; threads: Record<string, AiMessage[]>; findings: AiFinding[]; lookouts: AiLookout[]; reviewResult: AiReviewSummary | null; reviewRuns: AiReviewRun[]; approvedIds: readonly string[] }
 
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, { ...init, headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) } });
@@ -8,6 +11,13 @@ async function j<T>(url: string, init?: RequestInit): Promise<T> {
 const qs = (o: Record<string, string | number | null | undefined>) => new URLSearchParams(Object.entries(o).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)])).toString();
 
 export const api = {
+  ai: () => j<AiState>('/api/ai'),
+  aiChat: (body: { harnessId: string; message: string; path?: string; line?: number; side?: Side }) => j<{ answer: string; threadId: string; conversation: AiMessage[] }>('/api/ai/chat', { method: 'POST', body: JSON.stringify(body) }),
+  aiReview: (harnessId: string) => j<{ findings: AiFinding[]; lookouts: AiLookout[] }>('/api/ai/review', { method: 'POST', body: JSON.stringify({ harnessId }) }),
+  aiReword: (id: string, harnessId: string) => j<{ body: string }>(`/api/ai/findings/${encodeURIComponent(id)}/reword`, { method: 'POST', body: JSON.stringify({ harnessId }) }),
+  aiUpdateFinding: (id: string, body: string) => j<{ finding: AiFinding }>(`/api/ai/findings/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
+  aiDeleteFinding: (id: string) => j<{ ok: true }>(`/api/ai/findings/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  aiApproveFinding: (id: string) => j<{ draft: Draft }>(`/api/ai/findings/${encodeURIComponent(id)}/approve`, { method: 'POST' }),
   pr: () => j<PrInfo>('/api/pr'),
   files: (o: { base?: string | null; head?: string | null } = {}) => j<ChangedFile[]>(`/api/files?${qs(o)}`),
   tree: (at?: string | null) => j<TreeEntry[]>(`/api/tree?${qs({ at })}`),

@@ -9,7 +9,7 @@ import { renderMarkdown } from './markdown';
 
 const isMarkdownPath = (p: string) => /\.(md|markdown)$/i.test(p);
 
-export function CodePane({ extras = [], unanchored = null, onGutterClick = () => {}, selection = null }: { extras?: RowExtra[]; unanchored?: React.ReactNode; onGutterClick?: (side: Side, line: number, shift: boolean) => void; selection?: { side: Side; from: number; to: number } | null }) {
+export function CodePane({ extras = [], unanchored = null, fileAi = null, onGutterClick = () => {}, onAskFile, selection = null }: { extras?: RowExtra[]; unanchored?: React.ReactNode; fileAi?: React.ReactNode; onGutterClick?: (side: Side, line: number, shift: boolean) => void; onAskFile?: () => void; selection?: { side: Side; from: number; to: number } | null }) {
   const s = useStore(); const pr = usePr().data; const files = useFiles().data ?? [];
   const readOnly = useRangeReadOnly();
   const f = files.find(x => x.path === s.currentPath);
@@ -25,6 +25,18 @@ export function CodePane({ extras = [], unanchored = null, onGutterClick = () =>
   const previewFile = useFile(isMd && preview ? s.currentPath : null, previewAt);
   const bodyRef = useRef<HTMLDivElement>(null);
   useEffect(() => { s.setCursor(null); setPreview(false); if (s.jumpLine) { s.setCursor({ side: 'new', line: s.jumpLine }); setTimeout(() => bodyRef.current?.querySelector(`[data-testid="code/row/new/${s.jumpLine}"]`)?.scrollIntoView({ block: 'center' }), 50); } }, [s.currentPath, s.viewMode, s.jumpLine]);
+  useEffect(() => {
+    const target = s.aiJump;
+    if (!target || target.path !== s.currentPath || s.viewMode !== 'diff' || !diff.data || diff.isPlaceholderData || diff.isFetching) return;
+    const row = bodyRef.current?.querySelector(`[data-testid="code/row/${target.side}/${target.line}/gutter"]`)
+      ?? bodyRef.current?.querySelector(`[data-testid="code/row/${target.side}/${target.line}"]`);
+    if (row) {
+      row.scrollIntoView({ block: 'center' });
+      s.setCursor({ side: target.side, line: target.line });
+      s.setAiJump(null);
+    } else if (s.context !== 100000) s.setContext(100000);
+    else { s.showToast(`Line ${target.line} is no longer in this diff.`); s.setAiJump(null); }
+  }, [s.aiJump, s.currentPath, s.viewMode, s.context, diff.dataUpdatedAt, diff.isPlaceholderData, diff.isFetching]);
   const expand = () => s.setContext(s.context === 3 ? 25 : 100000);
   const openVscode = async () => { try { const { url } = await api.vscodeOpen(s.currentPath!, s.cursor?.line ?? 1); window.open(url, 'criever-vscode'); } catch (e) { s.showToast((e as Error).message); } };
   if (!s.currentPath) return <section className="pane code" data-testid="code"><div className="empty">Pick a file</div></section>;
@@ -34,6 +46,7 @@ export function CodePane({ extras = [], unanchored = null, onGutterClick = () =>
       <div className="code-hd">
         <span className="path" data-testid="code/path"><span className="dim">{dir}</span>{s.currentPath.slice(dir.length)}</span>
         {f && <span className="stat" data-testid="code/stat"><span className="p">+{f.additions}</span> <span className="m">−{f.deletions}</span></span>}
+        {onAskFile && f?.status !== 'D' && (s.viewMode !== 'file' || file.data?.content != null) && <button className="ai-file-action" aria-label="Ask AI about file" onClick={onAskFile}>Ask AI about file</button>}
         <span className="right">
           {isMd && (
             <span className="seg">
@@ -59,8 +72,9 @@ export function CodePane({ extras = [], unanchored = null, onGutterClick = () =>
         {/* Kept mounted (just hidden) while previewing, not unmounted, so an open composer's
             in-progress draft survives a round trip through preview mode. */}
         <div hidden={preview}>
+          {fileAi}
           {unanchored}
-          {s.viewMode === 'diff' && diff.data?.file && <DiffTable file={diff.data.file} path={s.currentPath} split={s.split} extras={extras} cursorLine={s.cursor} selection={selection} onExpand={expand}
+          {s.viewMode === 'diff' && diff.data?.file && <DiffTable file={diff.data.file} path={s.currentPath} split={s.split} extras={extras} cursorLine={s.cursor} selection={selection} canComment={!readOnly} onExpand={expand}
             onGutterClick={(side, line, shift) => { s.setCursor({ side, line }); onGutterClick(side, line, shift); }} />}
           {s.viewMode === 'diff' && diff.data && !diff.data.file && (
             <div className="empty" data-testid="code/noDiff">
@@ -70,7 +84,7 @@ export function CodePane({ extras = [], unanchored = null, onGutterClick = () =>
             </div>
           )}
           {s.viewMode === 'file' && file.data && (file.data.content == null ? <div className="empty">File does not exist at this commit.</div>
-            : <FileTable content={file.data.content} path={s.currentPath} extras={extras} cursorLine={s.cursor} selection={selection} onGutterClick={(side, line, shift) => { s.setCursor({ side, line }); onGutterClick(side, line, shift); }} />)}
+             : <FileTable content={file.data.content} path={s.currentPath} extras={extras} cursorLine={s.cursor} selection={selection} canComment={!readOnly} onGutterClick={(side, line, shift) => { s.setCursor({ side, line }); onGutterClick(side, line, shift); }} />)}
           {(diff.error || file.error) && <div className="empty" data-testid="code/error">{String((diff.error ?? file.error as Error).message)}</div>}
         </div>
         {preview && isMd && previewFile.data?.content != null && (
