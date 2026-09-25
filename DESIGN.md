@@ -25,18 +25,18 @@ The shell has a fixed header and footer, with independently scrolling file tree,
 - **Layout**: wrapping cluster in cards, fixed grouping in the header.
 
 ### Review card and composer
-- **Structure**: labelled header, readable body, contextual actions, inline textarea with visible label.
+- **Structure**: labelled header, readable body, contextual actions, inline textarea with visible label. A private question is a quiet annotation within the code reading surface, not a raised comment card: a slim neutral rule and typographic header establish its anchor, the writing area is the only inset field, and the submit action is a neutral control with an explicit privacy note.
 - **Variants**: existing comment/draft; new private question, AI finding, amber look-out.
 - **States**: loading, editable, error, approved or removed. A private question never becomes a normal comment draft. Approving a finding creates a normal draft; editing/rewording does not. The line composer opens on PR comment and has a compact, labelled, mutually exclusive comment/private-AI toggle directly attached to the card above its input. Switching modes never sends or publishes content. Once answered, a contextual thread retains an inline follow-up composer for back-and-forth on the same anchor.
-- **Layout**: inline under the anchored diff row; diff body owns scrolling.
+- **Layout**: inline under the anchored diff row; diff body owns scrolling. Use the same annotation structure for line and file questions, current-revision follow-ups, and earlier-revision read-only history. No colored side stripe, oversized filled CTA, or badge is used to identify private AI content. In dark mode the surface stays within the existing dark tonal ramp rather than adding a brighter card.
 
 ### AI rail
 - **Structure**: a clear "AI workbench" heading with close action; compact harness/review toolbar; two equally sized Chat and Findings tabs with the same spacing, height, and focus treatment; one scrollable active panel; and a bottom-anchored chat composer when Chat is selected. The Findings tab and an AI findings group in the ordinary comments rail show every retained finding and look-out, grouped by review run. Each row names its path, line, type, and a readable excerpt; selecting it opens its actual anchored result. Empty states teach the relevant next action.
 - **States**: no harness (configure guidance), ready, independently running chat and one or more reviews, completed reviews (including zero findings), inline error, general chat empty/populated, contextual summaries empty/populated. Starting another review preserves previous runs and their findings; completing them out of order does not lose either. Review progress remains visible while chat is usable, even after closing and reopening the AI rail. Completion persists per run across reload. A pending chat has a visible placeholder; only that conversation's submit is disabled while it is awaiting a reply. Results and answers do not interrupt an unsent question or jump the active tab.
 - **Layout**: right-side bounded panel. Hierarchy comes from existing `--panel` / `--panel-2` tonal surfaces, `--line` dividers, IBM Plex Sans for content, mono for paths/status and `--accent` for the one active control. No free-floating giant textarea or repeated labels.
-- **Diff line action**: one native, keyboard-focusable button in each actionable gutter row of unified and split tables opens the inline line composer. Its labelled toggle chooses PR comment (default) or private AI question; no separate AI button competes with the `+`.
+- **Diff line action**: one native, keyboard-focusable button in each actionable gutter row of unified and split tables opens the inline line composer. A flush text-tab choice with a bottom rule chooses PR comment (default) or private AI question; no pill group or separate AI button competes with the `+`.
 - **File AI action**: a visible "Ask about file" button in the code header opens a private composer immediately below the header for the current head revision, including files with no changed lines. The associated private answer remains at the file header. History and read-only ranges do not offer this action.
-- **Inline AI result**: finding and look-out cards remain anchored under their diff lines after the rail closes. Private Q&A history remains inline with a repeatable follow-up field and is not a comment draft; approval alone converts a finding to a normal draft. AI responses in the rail and on code render Markdown paragraphs, links, lists, and code using the existing escaped renderer; generated text never becomes executable HTML.
+- **Inline AI result**: finding and look-out annotations remain anchored under their diff lines after the rail closes. Private Q&A history is an open transcript with quiet role labels and restrained dividers, not a stack of cards; its follow-up field remains inline and is not a comment draft. Approval alone converts a finding to a normal draft. AI responses in the rail and on code render Markdown paragraphs, links, lists, and code using the existing escaped renderer; generated text never becomes executable HTML.
 
 ## 6. Motion & Interaction
 
@@ -46,7 +46,7 @@ The Chat/Findings switch uses a low-height segmented control with an ink/accent 
 
 ## 7. Depth & Surface
 
-Mixed existing strategy: panel/background tonal separation, one-pixel borders on cards and rails, `--shadow` only for elevated overlays. Inline AI guidance uses border and semantic color, not shadow or glow.
+Mixed existing strategy: panel/background tonal separation, one-pixel borders on cards and rails, `--shadow` only for elevated overlays. Inline AI content uses neutral rules, spacing, and type hierarchy; accent belongs to focused controls and links, amber to look-out text, never to a decorative edge or filled AI badge.
 
 ## 8. Accessibility Constraints & Accepted Debt
 
