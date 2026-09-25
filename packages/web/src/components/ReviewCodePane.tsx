@@ -76,12 +76,11 @@ export function ReviewCodePane() {
     return <div className="unanchored" data-testid="code/unanchored">{orphans.map(t => <ThreadCardFull key={t.root.id} thread={t} draftReplies={c.drafts.filter(d => d.parentId === t.root.id)} />)}</div>;
   }, [c, path]);
 
-  const fileThreadId = path && pr ? `file:${encodeURIComponent(path)}:${pr.sourceHead}` : '';
-  const fileThread = ai.data?.threads[fileThreadId];
+  const fileThreads = Object.entries(ai.data?.threads ?? {}).filter(([threadId]) => path && threadId.startsWith(`file:${encodeURIComponent(path)}:`));
   const fileAi = <div className="ai-file-context" data-testid="ai/file-thread">
-    {fileThread && <AiThreadCard threadId={fileThreadId} messages={fileThread} />}
+    {fileThreads.map(([threadId, messages]) => <AiThreadCard key={threadId} threadId={threadId} messages={messages} />)}
     {aiTarget?.path === path && <AiQuestionComposer target={aiTarget} onCancel={() => setAiTarget(null)} onSent={() => setAiTarget(null)} />}
   </div>;
   if (readOnly) return <CodePane onGutterClick={() => {}} />;
-  return <CodePane extras={extras} unanchored={unanchored} fileAi={aiAtHead && (fileThread || aiTarget?.path === path) ? fileAi : null} onGutterClick={onGutterClick} onAskFile={aiAtHead ? () => path && setAiTarget({ path }) : undefined} selection={s.selection} />;
+  return <CodePane extras={extras} unanchored={unanchored} fileAi={aiAtHead && (fileThreads.length || aiTarget?.path === path) ? fileAi : null} onGutterClick={onGutterClick} onAskFile={aiAtHead ? () => path && setAiTarget({ path }) : undefined} selection={s.selection} />;
 }
