@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { usePr } from '../hooks';
@@ -12,8 +12,9 @@ export function AiRail() {
   const query = useQuery({ queryKey: ['ai'], queryFn: api.ai });
   const queryClient = useQueryClient();
   const pr = usePr().data;
-  const { setAiOpen, openDiff, selectedHarnessId, setSelectedHarnessId } = useStore();
+  const { setAiOpen, openDiff, setAiJump, setRange, selectedHarnessId, setSelectedHarnessId } = useStore();
   const [question, setQuestion] = useState('');
+  const questionVersion = useRef(0);
   const [chatBusy, setChatBusy] = useState(false);
   const [reviewing, setReviewing] = useState(0);
   const [tab, setTab] = useState<'chat' | 'findings'>('chat');
@@ -28,10 +29,12 @@ export function AiRail() {
 
   const chat = async () => {
     if (!id || !question.trim()) return;
+    const submittedVersion = questionVersion.current;
     setChatBusy(true); setError('');
     try {
       await api.aiChat({ harnessId: id, message: question.trim() });
-      setQuestion(''); await refresh();
+      if (questionVersion.current === submittedVersion) setQuestion('');
+      await refresh();
     } catch (cause) {
       if (cause instanceof Error) setError(cause.message); else throw cause;
     } finally { setChatBusy(false); }
@@ -50,9 +53,10 @@ export function AiRail() {
     const anchor = threadAnchor(threadId);
     const file = threadId.match(/^file:(.*):[a-f\d]+$/)?.[1];
     if (!anchor && !file) return;
-    openDiff(anchor?.path ?? decodeURIComponent(file!));
+    setRange(null);
+    openDiff(anchor?.path ?? decodeURIComponent(file ?? ''));
+    if (anchor) setAiJump(anchor);
     setAiOpen(false);
-    if (anchor) window.setTimeout(() => document.querySelector(`[data-testid="code/row/${anchor.side}/${anchor.line}"]`)?.scrollIntoView({ block: 'center' }), 80);
   };
 
   return <aside className="pane rail ai-rail" data-testid="ai-rail">
@@ -87,7 +91,7 @@ export function AiRail() {
       </section>
     </div>
     <div className="ai-content" id="ai-findings-panel" role="tabpanel" hidden={tab !== 'findings'}><AiResultsList runs={runs} findings={state?.findings ?? []} lookouts={state?.lookouts ?? []} /></div>
-    <div className="ai-rail-composer" hidden={tab !== 'chat'}><label className="ai-label">General question<textarea aria-label="General question" placeholder="Ask about the whole review…" value={question} onChange={event => setQuestion(event.target.value)} /></label>
+    <div className="ai-rail-composer" hidden={tab !== 'chat'}><label className="ai-label">General question<textarea aria-label="General question" placeholder="Ask about the whole review…" value={question} onChange={event => { questionVersion.current++; setQuestion(event.target.value); }} /></label>
       <button className="btn primary sm" disabled={chatBusy || !id || !question.trim()} onClick={chat}>Ask AI</button><small>Private conversation · nothing is published</small></div>
   </aside>;
 }
