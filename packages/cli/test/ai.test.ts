@@ -136,6 +136,18 @@ describe('AI review HTTP contract', () => {
     expect((await reopened.loadAiThreads())[`general:${f.head}`]?.map(message => message.content)).toEqual(['What else changed?', '**Chat answered**']);
   });
 
+  it('supplies committed revision snapshots to a read-only OpenCode review when the worktree is dirty', async () => {
+    const f = await fixture();
+    writeFileSync(join(f.root, 'a.ts'), 'const before = 999;\nconst changed = false;\n');
+    const runner: AiRunner = { ...f.runner, list: () => [{ id: 'fake', name: 'Fake', kind: 'opencode' }] };
+    const response = await aiEndpoint(request('POST', '/api/ai/review', { harnessId: 'fake' }), '/api/ai/review', { adapter: runner, store: f.store, git: f.git, meta: f.meta, base: f.base });
+
+    expect(response?.status).toBe(200);
+    const snapshots = JSON.parse(f.inputs[0]?.split('\nREVISION SNAPSHOTS:\n')[1] ?? '[]') as { revision: string; path: string; content: string }[];
+    expect(snapshots).toContainEqual({ revision: f.head, path: 'a.ts', content: 'const before = 2;\nconst changed = true;\n' });
+    expect(snapshots.some(snapshot => snapshot.content.includes('const before = 999;'))).toBe(false);
+  });
+
   it('passes review-size prompts through stdin without the OS argument limit', async () => {
     const f = await fixture();
     const executable = join(f.root, 'harness.sh');
