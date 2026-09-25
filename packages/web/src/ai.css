@@ -40,7 +40,14 @@
 .ai-rail-composer small { text-align: right; }
 .ai-thread > span, .ai-guidance > span { color: var(--ink-3); font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
 .ai-thread-inline, .ai-question { margin: 6px 0; border: 1px solid var(--line); border-radius: 6px; padding: 10px; background: var(--panel); }
-.ai-thread-inline { border-left: 3px solid var(--accent); }
+.ai-thread-inline { max-width: 720px; overflow: hidden; padding: 0; border-left: 2px solid var(--accent); font: 13px/1.55 'IBM Plex Sans', sans-serif; }
+.ai-thread-inline > span { display: block; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel-2); color: var(--ink-2); font-size: 11px; font-weight: 600; }
+.ai-thread-inline .ai-message { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 12px; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--panel); font-size: 13px; }
+.ai-thread-inline .ai-message.user { background: var(--bg); }
+.ai-thread-inline .ai-message.assistant { border: 0; border-bottom: 1px solid var(--line); }
+.ai-thread-inline .ai-message b { padding-top: 1px; color: var(--ink-3); font: 500 11px/1.5 'IBM Plex Sans', sans-serif; }
+.ai-thread-inline .ai-message .mdPreview { min-width: 0; margin: 0; line-height: inherit; }
+.ai-thread-inline .ai-question.follow-up { margin: 0; padding: 12px; border: 0; border-radius: 0; }
 .ai-question { display: grid; gap: 10px; padding: 14px; border-left: 3px solid var(--accent); box-shadow: var(--shadow); }
 .ai-question.follow-up { margin-top: 10px; padding: 0; border: 0; box-shadow: none; background: transparent; }
 .ai-question.follow-up textarea { min-height: 50px; }
