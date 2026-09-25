@@ -154,7 +154,7 @@ test('a finding from an earlier revision stays in the rail with an explanation',
   await page.getByRole('button', { name: 'Run AI review' }).click();
   await page.getByRole('tab', { name: /Findings/ }).click();
   await expect(page.getByTestId('ai-rail').getByRole('button', { name: 'Finding: Potential null access' })).toBeVisible();
-  await expect(page.getByTestId('ai-rail').getByRole('button', { name: 'Look-out: Check authorization' })).toBeVisible();
+  await expect(page.getByTestId('ai-rail').getByRole('button', { name: 'Look at this: Check authorization' })).toBeVisible();
   await expect(page.locator('[data-testid^="ai/finding/"]').filter({ hasText: 'Potential null access' })).toHaveCount(0);
   await expect(page.locator('[data-testid^="ai/lookout/"]').filter({ hasText: 'Check authorization' })).toHaveCount(0);
   await expect(page.locator('[data-testid^="ai/finding/"]').filter({ hasText: 'Secondary finding' })).toBeVisible();
