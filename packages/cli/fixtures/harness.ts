@@ -8,6 +8,8 @@ import type { AiRunner } from '../src/ai';
 import { createHandler } from '../src/server';
 import { StateStore } from '../src/state';
 import { LocalReviewStore, emptyReview } from '../src/localreview';
+import { AiReviewChannel } from '../src/ai-review-channel';
+import { withReviewEvents } from '../test/ai-review-test-helpers';
 
 const args = process.argv.slice(2);
 const flag = (n: string) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
@@ -76,20 +78,22 @@ async function runBitbucket() {
     env: { ATLASSIAN_USER_EMAIL: 'alex@example.test', ATLASSIAN_API_TOKEN: 'synthetic-token', CRIEVER_STATE_DIR: stateDir, BITBUCKET_API_BASE: stub.base },
   });
   const vscodeOpened: { path: string; line: number }[] = [];
+  const reviewChannel = new AiReviewChannel(deps.store); await reviewChannel.start();
   // One deps object for the process lifetime: createHandler's routes (POST /api/publish,
   // /api/refresh) reassign d.comments/d.pr/d.mergeBase/d.commits on this same object to reflect
   // a fresh Bitbucket read. Rebuilding a spread copy per request would discard those writes the
   // instant the response finishes, so the next request would look at stale data again.
-  const handlerDeps = { ...deps, ai: fixtureAi, staticDir, vscode: { open: async (path: string, line: number) => { vscodeOpened.push({ path, line }); return `http://127.0.0.1:1/?fake&path=${encodeURIComponent(path)}&line=${line}`; } } };
+  const handlerDeps = { ...deps, ai: withReviewEvents(fixtureAi), reviewChannel, staticDir, vscode: { open: async (path: string, line: number) => { vscodeOpened.push({ path, line }); return `http://127.0.0.1:1/?fake&path=${encodeURIComponent(path)}&line=${line}`; } } };
   const handler = createHandler(handlerDeps);
   const server = Bun.serve({
     hostname: '127.0.0.1', port,
-    fetch: async (req) => {
+    fetch: async (req, server) => {
       const p = new URL(req.url).pathname;
       if (p === '/__vscode') return Response.json(vscodeOpened);
       if (p === '/__stub/recorded') return Response.json(stub.recorded());
       if (p === '/__reset') {
         stub.reset();
+        await reviewChannel.close();
         handlerDeps.store.state.drafts = []; await handlerDeps.store.save();
         resetAiState(handlerDeps);
         await handlerDeps.store.save();
@@ -104,7 +108,7 @@ async function runBitbucket() {
         await handlerDeps.store.saveAiThread(`src/api/devices.ts:new:3:${repo.c2}`, [{ role: 'user', content: 'Previous head line question' }, { role: 'assistant', content: 'Previous head line answer' }]);
         return Response.json({ ok: true });
       }
-      return handler(req);
+      return handler(req, server);
     },
   });
   console.log(JSON.stringify({ url: `http://127.0.0.1:${server.port}`, stubBase: `http://127.0.0.1:${stub.port}`, repoRoot: repo.root }));
@@ -133,14 +137,16 @@ async function runLocal() {
   await seed();
 
   const deps = await startup({ cwd: repo.root, log: () => {}, env: { CRIEVER_STATE_DIR: stateDir }, local: true, base: repo.main, head: repo.c3 });
-  const handlerDeps = { ...deps, ai: fixtureAi, staticDir, vscode: { open: async (path: string, line: number) => `http://127.0.0.1:1/?fake&path=${encodeURIComponent(path)}&line=${line}` } };
+  const reviewChannel = new AiReviewChannel(deps.store); await reviewChannel.start();
+  const handlerDeps = { ...deps, ai: withReviewEvents(fixtureAi), reviewChannel, staticDir, vscode: { open: async (path: string, line: number) => `http://127.0.0.1:1/?fake&path=${encodeURIComponent(path)}&line=${line}` } };
   const handler = createHandler(handlerDeps);
   const server = Bun.serve({
     hostname: '127.0.0.1', port,
-    fetch: async (req) => {
+    fetch: async (req, server) => {
       const p = new URL(req.url).pathname;
       if (p === '/__reset') {
         await seed();
+        await reviewChannel.close();
         handlerDeps.store.state.drafts = []; await handlerDeps.store.save();
         resetAiState(handlerDeps);
         await handlerDeps.store.save();
@@ -155,7 +161,7 @@ async function runLocal() {
         await handlerDeps.store.saveAiThread(`src/api/devices.ts:new:3:${repo.c2}`, [{ role: 'user', content: 'Previous head line question' }, { role: 'assistant', content: 'Previous head line answer' }]);
         return Response.json({ ok: true });
       }
-      return handler(req);
+      return handler(req, server);
     },
   });
   console.log(JSON.stringify({ url: `http://127.0.0.1:${server.port}`, repoRoot: repo.root }));
