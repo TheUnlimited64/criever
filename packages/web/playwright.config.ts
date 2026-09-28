@@ -9,7 +9,7 @@ export default defineConfig({
   ],
   projects: [
     { name: 'bitbucket', testIgnore: /(?:agent|workspace|review-filters)\.spec\.ts$/, use: { baseURL: 'http://127.0.0.1:4799' } },
-    { name: 'local', testMatch: /(?:agent|ai|ai-responsive)\.spec\.ts$/, use: { baseURL: 'http://127.0.0.1:4801' } },
+    { name: 'local', testMatch: /(?:agent|ai|ai-responsive|ai-async)\.spec\.ts$/, use: { baseURL: 'http://127.0.0.1:4801' } },
     { name: 'daemon', testMatch: /(?:workspace|review-filters)\.spec\.ts$/, use: { baseURL: 'http://127.0.0.1:4803' } },
   ],
 });
