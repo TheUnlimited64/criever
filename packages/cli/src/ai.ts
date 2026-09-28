@@ -73,7 +73,7 @@ function commandArgs(kind: HarnessKind, mode: 'chat' | 'patch'): string[] {
   switch (kind) {
     case 'claude': return ['-p', '--output-format', 'text', '--permission-mode', 'plan'];
     case 'codex': return ['exec', '--sandbox', 'read-only', '--json', ...(mode === 'chat' ? ['-c', 'features.plugins=false', '--disable', 'multi_agent'] : []), '-'];
-    case 'opencode': return mode === 'patch' ? ['run', '--pure', '--agent', 'build', '--format', 'json'] : ['run', '--format', 'json'];
+    case 'opencode': return mode === 'patch' ? ['run', '--agent', 'build', '--format', 'json'] : ['run', '--format', 'json'];
     default: return assertNever(kind);
   }
 }
