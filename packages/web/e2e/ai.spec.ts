@@ -58,6 +58,18 @@ test('a review with no findings gives a persistent, explicit completion result',
   await expect(page.getByTestId('ai/review-result')).toContainText('No findings or look-outs');
 });
 
+test('an incomplete review shows its limitation without saving a clean run', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('header').getByRole('button', { name: 'AI', exact: true }).click();
+  await page.getByLabel('AI harness').selectOption('fixture-incomplete');
+  await page.getByRole('button', { name: 'Run AI review' }).click();
+  await expect(page.getByRole('alert')).toContainText('A required caller was unavailable');
+  await expect(page.getByTestId('ai/review-result')).toHaveCount(0);
+  await page.reload();
+  await page.getByTestId('header').getByRole('button', { name: 'AI', exact: true }).click();
+  await expect(page.getByTestId('ai/review-result')).toHaveCount(0);
+});
+
 test('contextual Q&A is separate from general chat and persists after reload', async ({ page }) => {
   await page.goto('/');
   await openFixtureFile(page);
