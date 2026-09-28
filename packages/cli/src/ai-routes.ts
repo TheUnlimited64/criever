@@ -1,14 +1,15 @@
-import type { AiFinding, AiLookout, AiMessage, ReviewMeta } from '@criever/shared';
-import { conversationPrompt, parseReviewResult, reviewPrompt, type AiRunner } from './ai';
+import type { AiMessage, ReviewMeta } from '@criever/shared';
+import { conversationPrompt, reviewPrompt, type AiRunner } from './ai';
+import type { AiReviewChannel } from './ai-review-channel';
 import { parseUnifiedDiff } from './diff';
 import type { Git } from './git';
 import type { StateStore } from './state';
 
-interface AiRouteDeps { readonly adapter: AiRunner; readonly store: StateStore; readonly git: Git; readonly meta: ReviewMeta; readonly base: string }
+interface AiRouteDeps { readonly adapter: AiRunner; readonly store: StateStore; readonly git: Git; readonly meta: ReviewMeta; readonly base: string; readonly reviewChannel?: AiReviewChannel }
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
 
 export async function aiEndpoint(req: Request, path: string, deps: AiRouteDeps): Promise<Response | null> {
-  if (req.method === 'GET' && path === '/api/ai') return json({ harnesses: deps.adapter.list(), conversation: await deps.store.loadAiConversation(), threads: await deps.store.loadAiThreads(), findings: await deps.store.loadAiFindings(), lookouts: await deps.store.loadAiLookouts(), reviewResult: deps.store.state.aiReviewResult ?? null, reviewRuns: deps.store.loadAiReviewRuns(), approvedIds: deps.store.state.approvedAiFindings ?? [] });
+  if (req.method === 'GET' && path === '/api/ai') return json({ harnesses: deps.adapter.list(), conversation: await deps.store.loadAiConversation(), threads: await deps.store.loadAiThreads(), findings: await deps.store.loadAiFindings(), lookouts: await deps.store.loadAiLookouts(), reviewResult: deps.store.state.aiReviewResult ?? null, reviewRuns: deps.store.loadAiReviewRuns(), activeReviews: deps.reviewChannel?.activeReviews ?? [], approvedIds: deps.store.state.approvedAiFindings ?? [] });
   const approval = /^\/api\/ai\/findings\/([^/]+)\/approve$/.exec(path);
   if (req.method === 'POST' && approval) {
     const draft = await deps.store.approveAiFinding(decodeURIComponent(approval[1] ?? ''), deps.meta.sourceHead);
@@ -44,6 +45,7 @@ async function postAi(req: Request, path: string, deps: AiRouteDeps): Promise<Re
   const input = body as Record<string, unknown>;
   if (typeof input.harnessId !== 'string') return json({ error: 'harnessId required' }, 400);
   if (!deps.adapter.list().some(harness => harness.id === input.harnessId)) return json({ error: 'unknown harnessId' }, 400);
+  const harnessId = input.harnessId;
   if (path === '/api/ai/chat') {
     if (typeof input.message !== 'string' || !input.message.trim()) return json({ error: 'message required' }, 400);
     const hasPath = input.path !== undefined; const hasLine = input.line !== undefined;
@@ -60,7 +62,8 @@ async function postAi(req: Request, path: string, deps: AiRouteDeps): Promise<Re
     const conversation = await deps.store.appendAiExchange(threadId, question, { role: 'assistant', content: answer });
     return json({ answer, threadId, conversation });
   }
-  const reviewId = crypto.randomUUID();
+  const reviewChannel = deps.reviewChannel;
+  if (!reviewChannel) return json({ error: 'AI review channel unavailable' }, 503);
   const diff = await deps.git.run(['diff', '-M', '--no-color', '--no-ext-diff', '--unified=3', deps.base, deps.meta.sourceHead]);
   const changedFiles = await deps.git.changedFiles(deps.base, deps.meta.sourceHead);
   if (changedFiles.some(file => !file.oldPath && !file.newPath)) return json({ error: 'AI review incomplete: changed file path could not be read' }, 502);
@@ -71,33 +74,14 @@ async function postAi(req: Request, path: string, deps: AiRouteDeps): Promise<Re
   ]) : [];
   const snapshots = await Promise.all(revisionRefs.map(async ref => ({ ...ref, content: await deps.git.show(ref.revision, ref.path) })));
   const patch = snapshots.length ? `${diff.stdout}\nREVISION SNAPSHOTS:\n${JSON.stringify(snapshots)}` : diff.stdout;
-  const output = await deps.adapter.run(input.harnessId, reviewPrompt(patch, deps.base, deps.meta.sourceHead), 'patch');
-  let parsed;
-  try { parsed = parseReviewResult(output); }
-  catch (error) {
-    if (error instanceof Error) return json({ error: error.message }, 502);
-    throw error;
-  }
   const anchors = changedLines(diff.stdout);
-  const renames = new Map(changedFiles.flatMap(file => file.status === 'R' && file.oldPath && file.newPath ? [[file.oldPath, file.newPath] as const] : []));
-  for (const item of [...parsed.findings, ...parsed.lookouts]) {
-    const oldPath = changedFiles.find(file => file.status === 'R' && file.newPath === item.path)?.oldPath ?? item.path;
-    const blob = await deps.git.show(item.side === 'old' ? deps.base : deps.meta.sourceHead, item.side === 'old' ? oldPath : item.path);
-    const lines = blob === null ? 0 : blob.split('\n').length - Number(blob.endsWith('\n'));
-    if (!anchors.has(`${item.path}\0${item.side}\0${item.line}`) || item.line > lines) return json({ error: `AI review incomplete: invalid changed-line anchor ${item.path}:${item.line} (${item.side})` }, 502);
-  }
-  const findings: AiFinding[] = [];
-  const lookouts: AiLookout[] = [];
-  for (const item of parsed.findings) {
-    const id = crypto.randomUUID();
-    findings.push({ ...item, path: renames.get(item.path) ?? item.path, id, anchorCommit: deps.meta.sourceHead, reviewId });
-  }
-  for (const item of parsed.lookouts) {
-    lookouts.push({ ...item, path: renames.get(item.path) ?? item.path, id: crypto.randomUUID(), anchorCommit: deps.meta.sourceHead, reviewId });
-  }
-  const first = findings[0] ?? lookouts.find(item => item.path && item.side && item.line) ?? null;
-  await deps.store.completeAiReview({ id: reviewId, harnessId: input.harnessId, head: deps.meta.sourceHead, completedAt: new Date().toISOString(), findings: findings.length, lookouts: lookouts.length, first: first?.path && first.side && first.line ? { path: first.path, side: first.side, line: first.line } : null }, findings, lookouts);
-  return json({ findings, lookouts });
+  const renames = new Map<string, string>();
+  for (const file of changedFiles) if (file.status === 'R' && file.oldPath && file.newPath) renames.set(file.oldPath, file.newPath);
+  const started = await reviewChannel.startReview({
+    git: deps.git, harnessId, transport: harness?.kind === 'codex' ? 'tcp' : 'unix', base: deps.base, head: deps.meta.sourceHead, changedFiles, anchors, renames,
+    launch: (env, signal) => deps.adapter.run(harnessId, reviewPrompt(patch, deps.base, deps.meta.sourceHead, reviewChannel.command), 'patch', { env, signal }),
+  });
+  return json({ runId: started.id, status: 'starting' }, 202);
 }
 
 async function lineContext(input: Record<string, unknown>, deps: AiRouteDeps): Promise<{ threadId: string; prompt: string } | Response> {
