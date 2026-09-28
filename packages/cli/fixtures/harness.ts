@@ -14,23 +14,29 @@ const flag = (n: string) => { const i = args.indexOf(n); return i >= 0 ? args[i 
 const port = +(flag('--port') ?? 4799);
 const staticDir = flag('--static') ?? (existsSync(join(import.meta.dir, '../../web/dist')) ? join(import.meta.dir, '../../web/dist') : null);
 
+function reviewed<F extends { readonly body: string }, L extends { readonly body: string }>(findings: readonly F[], lookouts: readonly L[]): string {
+  return JSON.stringify({ status: 'complete', limitations: [],
+    observations: [...findings.map((item, index) => ({ id: `f${index}`, evidence: item.body, disposition: 'finding' })), ...lookouts.map((item, index) => ({ id: `l${index}`, evidence: item.body, disposition: 'lookout' }))],
+    findings: findings.map((item, index) => ({ ...item, observationId: `f${index}` })),
+    lookouts: lookouts.map((item, index) => ({ ...item, observationId: `l${index}` })),
+  });
+}
+
 const fixtureAi: AiRunner = {
-  list: () => [{ id: 'fixture-harness', name: 'Fixture AI', kind: 'claude' }, { id: 'fixture-empty', name: 'Fixture AI (no findings)', kind: 'claude' }, { id: 'fixture-old', name: 'Fixture AI (old-side)', kind: 'claude' }],
+  list: () => [{ id: 'fixture-harness', name: 'Fixture AI', kind: 'claude' }, { id: 'fixture-empty', name: 'Fixture AI (no findings)', kind: 'claude' }, { id: 'fixture-old', name: 'Fixture AI (old-side)', kind: 'claude' }, { id: 'fixture-incomplete', name: 'Fixture AI (incomplete)', kind: 'claude' }],
   run: async (id, prompt) => {
     if (prompt.includes('{"finding":')) return 'Fixture reword';
     if (prompt.includes('Show final answer only')) return 'I’ll inspect the code first.\n<answer>Yes. Full IRIs must use exact IRI lookup.</answer>';
     if (prompt.includes('Show unmarked response')) return 'I’ll inspect the code first.';
     if (prompt.includes('Render markdown')) return '<answer>A **bold answer** with `Row.from(QuerySolution)` and [source](https://example.test/source).\n\n- first check\n- second check\n- [unsafe](javascript:alert(1))</answer>';
     if (prompt.includes('\n\nConversation:\n')) return '<answer>Fixture answer</answer>';
-    if (id === 'fixture-empty') return JSON.stringify({ findings: [], lookouts: [] });
-    if (id === 'fixture-old') return JSON.stringify({ findings: [{ path: 'src/api/devices.ts', line: 4, side: 'old', body: 'Old-side regression', severity: 'warning' }], lookouts: [] });
-    return JSON.stringify({
-      findings: [
+    if (id === 'fixture-incomplete') return JSON.stringify({ status: 'incomplete', limitations: ['A required caller was unavailable'], observations: [], findings: [], lookouts: [] });
+    if (id === 'fixture-empty') return reviewed([], []);
+    if (id === 'fixture-old') return reviewed([{ path: 'src/api/devices.ts', line: 4, side: 'old', body: 'Old-side regression', severity: 'warning' }], []);
+    return reviewed([
         { path: 'src/api/devices.ts', line: 3, side: 'new', body: 'Potential null access', severity: 'warning' },
         { path: 'src/api/devices.ts', line: 5, side: 'new', body: 'Secondary finding', severity: 'info' },
-      ],
-      lookouts: [{ path: 'src/api/devices.ts', line: 3, side: 'new', body: 'Check authorization' }],
-    });
+      ], [{ path: 'src/api/devices.ts', line: 3, side: 'new', body: 'Check authorization' }]);
   },
 };
 
