@@ -26,7 +26,7 @@ it('keeps Codex read-only while allowing review skills to orchestrate review wor
   expect(chat).toContain('--disable multi_agent');
 });
 
-it('limits OpenCode reviews to read-only tools without limiting chat', async () => {
+it('keeps OpenCode reviews read-only without disabling review plugins', async () => {
   const root = mkdtempSync(join(tmpdir(), 'criever-opencode-'));
   dirs.push(root);
   const executable = join(root, 'opencode.sh');
@@ -37,5 +37,6 @@ it('limits OpenCode reviews to read-only tools without limiting chat', async () 
   const patch = JSON.parse(await adapter.run('opencode', 'Review the changes', 'patch')) as { permission: { edit: string; bash: string }; args: string };
   expect(patch.permission.edit).toBe('deny');
   expect(patch.permission.bash).toBe('deny');
-  expect(patch.args).toContain('--pure --agent build --format json');
+  expect(patch.args).toContain('run --agent build --format json');
+  expect(patch.args).not.toContain('--pure');
 });
