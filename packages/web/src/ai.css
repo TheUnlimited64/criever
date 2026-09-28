@@ -22,13 +22,13 @@
 .ai-results-total { padding: 10px 0; color: var(--ink-2); font-size: 12px; }
 .ai-results-run { margin-bottom: 18px; }
 .ai-results-run h3 { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; margin: 9px 0 6px; color: var(--ink); font-size: 12px; }
-.ai-results-run h3 small { color: var(--ink-3); font-size: 10px; font-weight: 400; }
+.ai-results-run h3 small { color: var(--ink-3); font-size: 11px; font-weight: 400; }
 .ai-result-item { display: grid; gap: 4px; width: 100%; margin: 4px 0; padding: 8px 10px; border: 1px solid transparent; border-bottom-color: var(--line); border-radius: 0; color: var(--ink); background: transparent; text-align: left; cursor: pointer; }
 .ai-result-item.lookout { color: var(--amber); }
 .ai-result-item:not(button) { cursor: default; }
 .ai-result-item:hover:is(button) { background: var(--panel-2); border-radius: 4px; }
-.ai-result-meta { color: var(--ink-3); font: 10px 'IBM Plex Mono', monospace; overflow-wrap: anywhere; }
-.ai-result-body { font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.ai-result-meta { color: var(--ink-3); font: 11px 'IBM Plex Mono', monospace; overflow-wrap: anywhere; }
+.ai-result-body { font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
 .ai-results-empty { color: var(--ink-3); font-size: 12px; }
 .group .ai-results { padding: 0 10px 8px; }
 .ai-content h3 { margin: 16px 0 10px; font-size: 12px; color: var(--ink-2); }
@@ -43,6 +43,8 @@
 .ai-thread > span, .ai-guidance > span { color: var(--ink-3); font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
 .ai-thread-inline { max-width: 720px; margin: 8px 0 12px; padding: 0 16px; border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line); background: var(--panel); font: 13px/1.55 'IBM Plex Sans', sans-serif; }
 .ai-thread-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; padding: 12px 0 4px; }
+.ai-thread-heading-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.ai-thread-heading-actions .btn { flex: none; }
 .ai-thread-heading strong { font-size: 13px; font-weight: 600; color: var(--ink); }
 .ai-thread-heading code, .ai-question-heading code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); font: 11px/1.5 'IBM Plex Mono', monospace; }
 .ai-thread-inline .ai-message { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; padding: 10px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; font: 13px/1.55 'IBM Plex Sans', sans-serif; }
@@ -56,6 +58,8 @@
 .ai-question-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; }
 .ai-question-heading strong { color: var(--ink); font-size: 14px; font-weight: 600; }
 .ai-question label { display: grid; min-width: 0; }
+.ai-question-harness { justify-self: start; }
+.ai-question-harness select { min-width: 140px; max-width: 100%; text-align: left; }
 .ai-question textarea { width: 100%; min-height: 60px; max-height: 180px; resize: vertical; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 9px 10px; color: var(--ink); font: 13px/1.5 'IBM Plex Sans', sans-serif; }
 .ai-question textarea:focus { border-color: var(--accent); }
 .ai-question-footer { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px 16px; }
@@ -90,6 +94,9 @@
 .ai-review-result span { color: var(--ink-2); }
 .ai-review-result button { justify-self: start; }
 .ai-review-progress { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--ink-2); font-size: 11px; }
+.ai-review-status { border-top-color: var(--amber); }
+.ai-review-failed, .ai-review-incomplete { color: var(--del); }
+.ai-results-active { border-top: 1px solid var(--accent-soft); }
 .ai-file-action { flex: none; padding: 5px 8px; border: 1px solid var(--line-strong); border-radius: 5px; color: var(--ink-2); background: var(--panel); font-size: 11px; font-weight: 600; cursor: pointer; }
 .ai-file-action:hover, .ai-file-action:focus-visible { color: var(--ink); background: var(--panel-2); }
 .ai-file-context:not(:empty) { margin: 12px; }
