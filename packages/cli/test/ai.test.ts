@@ -3,6 +3,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from '../src/git';
+import { parseUnifiedDiff } from '../src/diff';
 import { StateStore } from '../src/state';
 import { AiAdapter, parseFindings, parseHarnessOutput, parseReviewResult, type AiRunner } from '../src/ai';
 import { aiEndpoint } from '../src/ai-routes';
@@ -26,11 +27,21 @@ const fixture = async () => {
   const head = await sh(root, ['rev-parse', 'HEAD']);
   const store = new StateStore(join(root, 'private-state.json')); await store.load();
   const inputs: string[] = [];
-  const runner: AiRunner = { list: () => [{ id: 'fake', name: 'Fake', kind: 'codex' }], run: async (_id, input) => { inputs.push(input); const result = '{"findings":[{"path":"a.ts","line":2,"side":"new","body":"Check this","severity":"warning"}],"lookouts":[{"path":"a.ts","line":2,"side":"new","body":"Watch regressions"}]}'; return input.includes('\n\nConversation:\n') ? `<answer>${result}</answer>` : result; } };
+  const runner: AiRunner = { list: () => [{ id: 'fake', name: 'Fake', kind: 'codex' }], run: async (_id, input) => { inputs.push(input); const result = '{"findings":[{"path":"a.ts","line":2,"side":"new","body":"Check this","severity":"warning"}],"lookouts":[{"path":"a.ts","line":2,"side":"new","body":"Watch regressions"}]}'; return input.includes('\n\nConversation:\n') ? `<answer>${result}</answer>` : reviewed({ findings: [{ path: 'a.ts', line: 2, side: 'new', body: 'Check this', severity: 'warning' }], lookouts: [{ path: 'a.ts', line: 2, side: 'new', body: 'Watch regressions' }] }); } };
   const meta: ReviewMeta = { id: 42, title: 'Test', url: null, author: 'you', description: null, sourceBranch: 'feature', sourceHead: head, destinationBranch: 'main', destinationHead: base };
   return { root, base, head, git: new Git(root), store, runner, inputs, meta };
 };
 const request = (method: string, path: string, body?: unknown) => new Request(`http://local${path}`, { method, ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) });
+function reviewed<F extends { readonly body: string }, L extends { readonly body: string }>(result: { readonly findings: readonly F[]; readonly lookouts: readonly L[] }): string {
+  return JSON.stringify({ status: 'complete', limitations: [],
+    observations: [
+      ...result.findings.map((item, index) => ({ id: `f${index}`, evidence: item.body, disposition: 'finding' })),
+      ...result.lookouts.map((item, index) => ({ id: `l${index}`, evidence: item.body, disposition: 'lookout' })),
+    ],
+    findings: result.findings.map((item, index) => ({ ...item, observationId: `f${index}` })),
+    lookouts: result.lookouts.map((item, index) => ({ ...item, observationId: `l${index}` })),
+  });
+}
 const handlerFor = (fixtureData: Awaited<ReturnType<typeof fixture>>, kind: 'local' | 'bitbucket', published: string[]) => {
   const provider: Provider = { kind, meta: async () => fixtureData.meta, listComments: async () => [], listCommits: async () => [], publishComment: async body => { published.push(body.raw); return 500; }, resolveComment: async () => {} };
   return createHandler({ git: fixtureData.git, store: fixtureData.store, provider, ws: 'workspace', repo: 'repo', meta: fixtureData.meta, mergeBase: fixtureData.base, comments: [], commits: [], remote: '', staticDir: null, vscode: null, ai: fixtureData.runner });
@@ -119,7 +130,7 @@ describe('AI review HTTP contract', () => {
     const first = aiEndpoint(request('POST', '/api/ai/review', { harnessId: 'fake' }), '/api/ai/review', deps);
     const second = aiEndpoint(request('POST', '/api/ai/review', { harnessId: 'fake' }), '/api/ai/review', deps);
     await started;
-    const reviewOutput = (label: string) => JSON.stringify({ findings: [{ path: 'a.ts', line: 2, side: 'new', body: label, severity: 'warning' }], lookouts: [] });
+    const reviewOutput = (label: string) => reviewed({ findings: [{ path: 'a.ts', line: 2, side: 'new', body: label, severity: 'warning' }], lookouts: [] });
     pending[1]?.(reviewOutput('Second run'));
     await second;
     const secondFinding = (await f.store.loadAiFindings()).find(item => item.body === 'Second run');
@@ -170,7 +181,7 @@ describe('AI review HTTP contract', () => {
 
   it('rewords a finding through the selected harness and can save an independent lookout', async () => {
     const f = await fixture(); const sent: string[] = []; const harnessIds: string[] = [];
-    const adapter: AiRunner = { ...f.runner, run: async (id, prompt) => { sent.push(prompt); harnessIds.push(id); if (prompt.includes('{"finding":')) return 'Keep this robust'; return '{"findings":[{"path":"a.ts","line":2,"side":"new","body":"Check this","severity":"warning"}],"lookouts":[{"path":"a.ts","line":2,"side":"new","body":"Watch API compatibility"}] }'; } };
+    const adapter: AiRunner = { ...f.runner, run: async (id, prompt) => { sent.push(prompt); harnessIds.push(id); if (prompt.includes('{"finding":')) return 'Keep this robust'; return reviewed({ findings: [{ path: 'a.ts', line: 2, side: 'new', body: 'Check this', severity: 'warning' }], lookouts: [{ path: 'a.ts', line: 2, side: 'new', body: 'Watch API compatibility' }] }); } };
     const deps = { adapter, store: f.store, git: f.git, meta: f.meta, base: f.base };
     const review = await aiEndpoint(request('POST', '/api/ai/review', { harnessId: 'fake' }), '/api/ai/review', deps);
     const reviewResult = await review?.json() as { findings: { id: string; body: string }[]; lookouts: { id: string; body: string }[] };
@@ -241,9 +252,67 @@ describe('AI review HTTP contract', () => {
 
   it('rejects malformed and out-of-diff AI finding anchors', async () => {
     expect(() => parseFindings('{broken')).toThrow();
-    const f = await fixture(); const bad: AiRunner = { ...f.runner, run: async () => '{"findings":[{"path":"a.ts","line":900,"side":"new","body":"bad","severity":"error"}],"lookouts":[]}' };
-    const response = await aiEndpoint(request('POST', '/api/ai/review', { harnessId: 'fake' }), '/api/ai/review', { adapter: bad, store: f.store, git: f.git, meta: f.meta, base: f.base });
-    expect((await response?.json() as { findings: unknown[] }).findings).toEqual([]);
+    const f = await fixture(); const bad: AiRunner = { ...f.runner, run: async () => JSON.stringify({ status: 'complete', limitations: [], observations: [{ id: 'f1', evidence: 'Changed a.ts', disposition: 'finding' }], findings: [{ observationId: 'f1', path: 'a.ts', line: 900, side: 'new', body: 'bad', severity: 'error' }], lookouts: [] }) };
+    const response = await handlerFor({ ...f, runner: bad }, 'local', [])(request('POST', '/api/ai/review', { harnessId: 'fake' }));
+    expect(response.status).toBe(502);
+    expect((await response.json() as { error: string }).error).toContain('anchor');
+    expect(await f.store.loadAiReviewRuns()).toEqual([]);
+  });
+
+  it('rejects a review that loses an observation during final classification', async () => {
+    const f = await fixture(); const bad: AiRunner = { ...f.runner, run: async () => JSON.stringify({ status: 'complete', limitations: [], observations: [{ id: 'unmapped', evidence: 'The removed guard had a caller', disposition: 'lookout' }], findings: [], lookouts: [] }) };
+    const response = await handlerFor({ ...f, runner: bad }, 'local', [])(request('POST', '/api/ai/review', { harnessId: 'fake' }));
+    expect(response.status).toBe(502);
+    expect((await response.json() as { error: string }).error).toContain('observation');
+    expect(await f.store.loadAiReviewRuns()).toEqual([]);
+  });
+
+  it('rejects incomplete reviews without recording a clean result', async () => {
+    const f = await fixture(); const bad: AiRunner = { ...f.runner, run: async () => JSON.stringify({ status: 'incomplete', limitations: ['Could not inspect a required caller'], observations: [], findings: [], lookouts: [] }) };
+    const response = await handlerFor({ ...f, runner: bad }, 'local', [])(request('POST', '/api/ai/review', { harnessId: 'fake' }));
+    expect(response.status).toBe(502);
+    expect((await response.json() as { error: string }).error).toContain('Could not inspect');
+    expect(await f.store.loadAiReviewRuns()).toEqual([]);
+  });
+
+  it('does not retain a valid finding when another result has an invalid anchor', async () => {
+    const f = await fixture(); const bad: AiRunner = { ...f.runner, run: async () => reviewed({ findings: [
+      { path: 'a.ts', line: 2, side: 'new', body: 'Valid changed line', severity: 'warning' },
+      { path: 'a.ts', line: 900, side: 'new', body: 'Invalid changed line', severity: 'warning' },
+    ], lookouts: [] }) };
+    const response = await handlerFor({ ...f, runner: bad }, 'local', [])(request('POST', '/api/ai/review', { harnessId: 'fake' }));
+    expect(response.status).toBe(502);
+    expect(await f.store.loadAiFindings()).toEqual([]);
+    expect(await f.store.loadAiReviewRuns()).toEqual([]);
+  });
+
+  it('accepts an evidence-backed dismissal and a genuinely empty completed review', async () => {
+    expect(parseReviewResult(JSON.stringify({ status: 'complete', limitations: [], observations: [{ id: 'd1', evidence: 'Base and head have the same behavior', disposition: 'dismissed', reason: 'The supported input remains unchanged' }], findings: [], lookouts: [] }))).toMatchObject({ findings: [], lookouts: [] });
+    const f = await fixture(); const clean: AiRunner = { ...f.runner, run: async () => reviewed({ findings: [], lookouts: [] }) };
+    const response = await handlerFor({ ...f, runner: clean }, 'local', [])(request('POST', '/api/ai/review', { harnessId: 'fake' }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ findings: [], lookouts: [] });
+    expect((await f.store.loadAiReviewRuns())[0]).toMatchObject({ findings: 0, lookouts: 0 });
+  });
+
+  it('rejects duplicate or unsupported dispositions rather than losing their results', () => {
+    const item = { observationId: 'one', path: 'a.ts', line: 2, side: 'new', body: 'Risk', severity: 'warning' };
+    expect(() => parseReviewResult(JSON.stringify({ status: 'complete', limitations: [], observations: [{ id: 'one', evidence: 'A change', disposition: 'finding' }, { id: 'one', evidence: 'A duplicate', disposition: 'finding' }], findings: [item], lookouts: [] }))).toThrow('observation');
+    expect(() => parseReviewResult(JSON.stringify({ status: 'complete', limitations: [], observations: [{ id: 'one', evidence: 'A change', disposition: 'dismissed' }], findings: [], lookouts: [] }))).toThrow('observation');
+    expect(() => parseReviewResult(JSON.stringify({ status: 'complete', limitations: [], observations: [{ id: 'one', evidence: 'A change', disposition: 'finding' }], findings: [item, item], lookouts: [] }))).toThrow('observation');
+  });
+
+  it('anchors a finding in a changed file with an escaped UTF-8 path', async () => {
+    const f = await fixture(); const path = 'café space.ts';
+    writeFileSync(join(f.root, path), 'export const café = true;\n');
+    await sh(f.root, ['add', path]); await sh(f.root, ['commit', '-qm', 'add accented file']);
+    const head = await sh(f.root, ['rev-parse', 'HEAD']);
+    const parsed = parseUnifiedDiff((await f.git.run(['diff', '-M', '--no-color', '--no-ext-diff', '--unified=3', f.base, head])).stdout);
+    expect(parsed.some(file => file.newPath === path && file.hunks.some(hunk => hunk.lines.some(line => line.kind === 'add' && line.newNo === 1))), JSON.stringify(parsed)).toBe(true);
+    const runner: AiRunner = { ...f.runner, run: async () => reviewed({ findings: [{ path, line: 1, side: 'new', body: 'Review accented path', severity: 'info' }], lookouts: [] }) };
+    const response = await handlerFor({ ...f, runner, meta: { ...f.meta, sourceHead: head } }, 'local', [])(request('POST', '/api/ai/review', { harnessId: 'fake' }));
+    expect(response.status, await response.clone().text()).toBe(200);
+    expect((await response.json() as { findings: { path: string }[] }).findings[0]?.path).toBe(path);
   });
 
   it('anchors findings and look-outs to removed lines of a deleted file', async () => {
@@ -251,7 +320,7 @@ describe('AI review HTTP contract', () => {
     const prompts: string[] = [];
     const runner: AiRunner = { ...f.runner, run: async (_id, prompt) => {
       if (prompt.includes('{"finding":')) { prompts.push(prompt); return 'Better wording'; }
-      return JSON.stringify({ findings: [{ path: 'removed.ts', line: 1, side: 'old', body: 'Check deletion', severity: 'warning' }, { path: 'a.ts', line: 1, side: 'old', body: 'Check old value', severity: 'warning' }], lookouts: [{ path: 'removed.ts', line: 1, side: 'old', body: 'Review consumers' }] });
+      return reviewed({ findings: [{ path: 'removed.ts', line: 1, side: 'old', body: 'Check deletion', severity: 'warning' }, { path: 'a.ts', line: 1, side: 'old', body: 'Check old value', severity: 'warning' }], lookouts: [{ path: 'removed.ts', line: 1, side: 'old', body: 'Review consumers' }] });
     } };
     const deps = { adapter: runner, store: f.store, git: f.git, meta: f.meta, base: f.base };
     const response = await aiEndpoint(request('POST', '/api/ai/review', { harnessId: 'fake' }), '/api/ai/review', deps);
@@ -275,7 +344,7 @@ describe('AI review HTTP contract', () => {
       prompts.push(prompt);
       if (prompt.includes('{"finding":')) return 'Clearer wording';
       if (prompt.includes('\n\nConversation:\n')) return '<answer>Old-side answer</answer>';
-      return JSON.stringify({ findings: [{ path: 'old-name.ts', line: 1, side: 'old', body: 'Old-side concern', severity: 'warning' }], lookouts: [{ path: 'old-name.ts', line: 1, side: 'old', body: 'Review rename' }] });
+      return reviewed({ findings: [{ path: 'old-name.ts', line: 1, side: 'old', body: 'Old-side concern', severity: 'warning' }], lookouts: [{ path: 'old-name.ts', line: 1, side: 'old', body: 'Review rename' }] });
     } };
     const deps = { adapter: runner, store: f.store, git: f.git, meta: f.meta, base: f.base };
     const question = await aiEndpoint(request('POST', '/api/ai/chat', { harnessId: 'fake', message: 'Why change this?', path: 'new-name.ts', side: 'old', line: 1 }), '/api/ai/chat', deps);
@@ -301,14 +370,14 @@ describe('AI review HTTP contract', () => {
   });
 
   it('extracts a review object when an agent wraps JSON in a progress note or code fence', () => {
-    const review = '{"findings":[{"path":"a.ts","line":2,"side":"new","body":"Check this","severity":"warning"}],"lookouts":[]}';
+    const review = reviewed({ findings: [{ path: 'a.ts', line: 2, side: 'new', body: 'Check this', severity: 'warning' }], lookouts: [] });
     expect(parseReviewResult(`I checked the diff.\n\n${review}`).findings).toHaveLength(1);
     expect(parseReviewResult(`I checked the diff.\n\n\`\`\`json\n${review}\n\`\`\``).findings).toHaveLength(1);
     expect(() => parseReviewResult('I checked the diff and found a problem.')).toThrow('AI review');
   });
 
   it('uses the final review when a progress note contains an earlier example object', () => {
-    const final = '{"findings":[{"path":"a.ts","line":2,"side":"new","body":"Real finding","severity":"warning"}],"lookouts":[]}';
+    const final = reviewed({ findings: [{ path: 'a.ts', line: 2, side: 'new', body: 'Real finding', severity: 'warning' }], lookouts: [] });
     expect(parseReviewResult(`Example: {"findings":[],"lookouts":[]}\nFinal: ${final}`).findings[0]?.body).toBe('Real finding');
   });
 });

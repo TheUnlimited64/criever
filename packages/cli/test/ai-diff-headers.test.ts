@@ -35,10 +35,14 @@ it('retains findings when changed lines resemble diff file headers', async () =>
   const meta: ReviewMeta = { id: 1, title: 'Review', url: null, author: 'test', description: null, sourceBranch: 'main', sourceHead: head, destinationBranch: 'main', destinationHead: base };
   const adapter: AiRunner = {
     list: () => [{ id: 'fake', name: 'Fake', kind: 'codex' }],
-    run: async () => JSON.stringify({ findings: [
-      { path: 'demo.txt', line: 1, side: 'old', body: 'Check removal', severity: 'warning' },
-      { path: 'demo.txt', line: 1, side: 'new', body: 'Check addition', severity: 'warning' },
-    ], lookouts: [{ path: 'demo.txt', line: 1, side: 'new', body: 'Check consumers' }] }),
+    run: async () => JSON.stringify({ status: 'complete', limitations: [], observations: [
+      { id: 'f1', evidence: 'Removed decoy line', disposition: 'finding' },
+      { id: 'f2', evidence: 'Added decoy line', disposition: 'finding' },
+      { id: 'l1', evidence: 'Consumer contract', disposition: 'lookout' },
+    ], findings: [
+      { observationId: 'f1', path: 'demo.txt', line: 1, side: 'old', body: 'Check removal', severity: 'warning' },
+      { observationId: 'f2', path: 'demo.txt', line: 1, side: 'new', body: 'Check addition', severity: 'warning' },
+    ], lookouts: [{ observationId: 'l1', path: 'demo.txt', line: 1, side: 'new', body: 'Check consumers' }] }),
   };
 
   const response = await aiEndpoint(new Request('http://local/api/ai/review', { method: 'POST', body: JSON.stringify({ harnessId: 'fake' }) }), '/api/ai/review', { adapter, git, store, meta, base });

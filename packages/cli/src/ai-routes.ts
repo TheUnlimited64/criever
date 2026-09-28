@@ -1,5 +1,6 @@
 import type { AiFinding, AiLookout, AiMessage, ReviewMeta } from '@criever/shared';
 import { conversationPrompt, parseReviewResult, reviewPrompt, type AiRunner } from './ai';
+import { parseUnifiedDiff } from './diff';
 import type { Git } from './git';
 import type { StateStore } from './state';
 
@@ -60,8 +61,9 @@ async function postAi(req: Request, path: string, deps: AiRouteDeps): Promise<Re
     return json({ answer, threadId, conversation });
   }
   const reviewId = crypto.randomUUID();
-  const diff = await deps.git.run(['diff', '--no-ext-diff', '--unified=3', deps.base, deps.meta.sourceHead]);
+  const diff = await deps.git.run(['diff', '-M', '--no-color', '--no-ext-diff', '--unified=3', deps.base, deps.meta.sourceHead]);
   const changedFiles = await deps.git.changedFiles(deps.base, deps.meta.sourceHead);
+  if (changedFiles.some(file => !file.oldPath && !file.newPath)) return json({ error: 'AI review incomplete: changed file path could not be read' }, 502);
   const harness = deps.adapter.list().find(item => item.id === input.harnessId);
   const revisionRefs = harness?.kind === 'opencode' ? changedFiles.flatMap(file => [
     ...(file.oldPath ? [{ revision: deps.base, path: file.oldPath }] : []),
@@ -70,18 +72,27 @@ async function postAi(req: Request, path: string, deps: AiRouteDeps): Promise<Re
   const snapshots = await Promise.all(revisionRefs.map(async ref => ({ ...ref, content: await deps.git.show(ref.revision, ref.path) })));
   const patch = snapshots.length ? `${diff.stdout}\nREVISION SNAPSHOTS:\n${JSON.stringify(snapshots)}` : diff.stdout;
   const output = await deps.adapter.run(input.harnessId, reviewPrompt(patch, deps.base, deps.meta.sourceHead), 'patch');
-  const parsed = parseReviewResult(output);
+  let parsed;
+  try { parsed = parseReviewResult(output); }
+  catch (error) {
+    if (error instanceof Error) return json({ error: error.message }, 502);
+    throw error;
+  }
   const anchors = changedLines(diff.stdout);
   const renames = new Map(changedFiles.flatMap(file => file.status === 'R' && file.oldPath && file.newPath ? [[file.oldPath, file.newPath] as const] : []));
+  for (const item of [...parsed.findings, ...parsed.lookouts]) {
+    const oldPath = changedFiles.find(file => file.status === 'R' && file.newPath === item.path)?.oldPath ?? item.path;
+    const blob = await deps.git.show(item.side === 'old' ? deps.base : deps.meta.sourceHead, item.side === 'old' ? oldPath : item.path);
+    const lines = blob === null ? 0 : blob.split('\n').length - Number(blob.endsWith('\n'));
+    if (!anchors.has(`${item.path}\0${item.side}\0${item.line}`) || item.line > lines) return json({ error: `AI review incomplete: invalid changed-line anchor ${item.path}:${item.line} (${item.side})` }, 502);
+  }
   const findings: AiFinding[] = [];
   const lookouts: AiLookout[] = [];
   for (const item of parsed.findings) {
-    if (!anchors.has(`${item.path}\0${item.side}\0${item.line}`)) continue;
     const id = crypto.randomUUID();
     findings.push({ ...item, path: renames.get(item.path) ?? item.path, id, anchorCommit: deps.meta.sourceHead, reviewId });
   }
   for (const item of parsed.lookouts) {
-    if (!anchors.has(`${item.path}\0${item.side}\0${item.line}`)) continue;
     lookouts.push({ ...item, path: renames.get(item.path) ?? item.path, id: crypto.randomUUID(), anchorCommit: deps.meta.sourceHead, reviewId });
   }
   const first = findings[0] ?? lookouts.find(item => item.path && item.side && item.line) ?? null;
@@ -145,18 +156,14 @@ async function mutateAiItem(req: Request, collection: string, id: string, deps: 
 
 function changedLines(diff: string): Set<string> {
   const anchors = new Set<string>();
-  let oldPath = ''; let newPath = '';
-  let oldLine = 0; let newLine = 0;
-  let inHunk = false;
-  for (const entry of diff.split('\n')) {
-    if (entry.startsWith('diff --git ')) { oldPath = ''; newPath = ''; inHunk = false; continue; }
-    if (!inHunk && entry.startsWith('--- a/')) { oldPath = entry.slice(6); continue; }
-    if (!inHunk && entry.startsWith('+++ b/')) { newPath = entry.slice(6); continue; }
-    const header = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(entry);
-    if (header) { oldLine = Number(header[1]); newLine = Number(header[2]); inHunk = true; continue; }
-    if (inHunk && entry.startsWith('+')) { anchors.add(`${newPath}\0new\0${newLine++}`); continue; }
-    if (inHunk && entry.startsWith('-')) { anchors.add(`${oldPath}\0old\0${oldLine}`); if (newPath) anchors.add(`${newPath}\0old\0${oldLine}`); oldLine++; continue; }
-    if (inHunk && entry.startsWith(' ')) { oldLine++; newLine++; }
+  for (const file of parseUnifiedDiff(diff)) {
+    for (const hunk of file.hunks) for (const line of hunk.lines) {
+      if (line.kind === 'add' && file.newPath && line.newNo !== null) anchors.add(`${file.newPath}\0new\0${line.newNo}`);
+      if (line.kind === 'del' && file.oldPath && line.oldNo !== null) {
+        anchors.add(`${file.oldPath}\0old\0${line.oldNo}`);
+        if (file.status === 'R' && file.newPath) anchors.add(`${file.newPath}\0old\0${line.oldNo}`);
+      }
+    }
   }
   return anchors;
 }
