@@ -10,3 +10,4 @@ packages/web/playwright-report
 # a local review (`criever --local`) is scratch by default; committing one to
 # hand a review to someone else is a deliberate opt-in — see README.
 .criever/
+.slim/deepwork/
