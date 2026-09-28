@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { AiReviewPhase } from '@criever/shared';
 import { api } from '../api';
 import { usePr } from '../hooks';
 import { useStore } from '../store';
@@ -9,10 +10,14 @@ import { AiMessageView } from './AiMessageView';
 import { AiResultsList } from './AiResultsList';
 
 export function AiRail() {
-  const query = useQuery({ queryKey: ['ai'], queryFn: api.ai });
+  const query = useQuery({
+    queryKey: ['ai'],
+    queryFn: api.ai,
+    refetchInterval: current => current.state.data?.activeReviews?.some(review => isLive(review.status)) ? 500 : false,
+  });
   const queryClient = useQueryClient();
   const pr = usePr().data;
-  const { setAiOpen, openDiff, setAiJump, setRange, selectedHarnessId, setSelectedHarnessId } = useStore();
+  const { setAiOpen, openDiff, setAiJump, setRange, selectedHarnessId, setSelectedHarnessId, setThreadClosed } = useStore();
   const [question, setQuestion] = useState('');
   const questionVersion = useRef(0);
   const [chatBusy, setChatBusy] = useState(false);
@@ -21,6 +26,10 @@ export function AiRail() {
   const [error, setError] = useState('');
   const state = query.data;
   const runs = state?.reviewRuns ?? [];
+  const completedIds = new Set(runs.map(run => run.id));
+  const activeReviews = (state?.activeReviews ?? []).filter(review => !completedIds.has(review.id));
+  const liveReviews = activeReviews.filter(review => isLive(review.status));
+  const resultCount = (state?.findings.length ?? 0) + (state?.lookouts.length ?? 0) + activeReviews.reduce((total, review) => total + review.findings.length + review.lookouts.length, 0);
   const id = state?.harnesses.some(harness => harness.id === selectedHarnessId) ? selectedHarnessId : state?.harnesses[0]?.id ?? '';
   const threads = Object.entries(state?.threads ?? {});
   const general = state?.threads[`general:${pr?.sourceHead}`] ?? state?.conversation ?? [];
@@ -54,6 +63,7 @@ export function AiRail() {
     const file = threadId.match(/^file:(.*):[a-f\d]+$/)?.[1];
     if (!anchor && !file) return;
     setRange(null);
+    setThreadClosed(threadId, false);
     openDiff(anchor?.path ?? decodeURIComponent(file ?? ''));
     if (anchor) setAiJump(anchor);
     setAiOpen(false);
@@ -63,13 +73,15 @@ export function AiRail() {
     <div className="pane-hd ai-rail-head"><span><strong>AI workbench</strong><small>Private to this review</small></span><button className="btn sm ghost" aria-label="Close AI chat" onClick={() => setAiOpen(false)}>Close</button></div>
     <div className="ai-rail-tabs" role="tablist" aria-label="AI workbench">
       <button type="button" role="tab" aria-selected={tab === 'chat'} aria-controls="ai-chat-panel" onClick={() => setTab('chat')}>Chat</button>
-      <button type="button" role="tab" aria-selected={tab === 'findings'} aria-controls="ai-findings-panel" onClick={() => setTab('findings')}>Findings <span className="ai-tab-count">{(state?.findings.length ?? 0) + (state?.lookouts.length ?? 0)}</span></button>
+      <button type="button" role="tab" aria-selected={tab === 'findings'} aria-controls="ai-findings-panel" onClick={() => setTab('findings')}>Findings <span className="ai-tab-count">{resultCount}</span></button>
     </div>
     <div className="ai-rail-setup"><label className="ai-label">Harness<select aria-label="AI harness" className="btn sm" value={id} onChange={event => setSelectedHarnessId(event.target.value)}>{state?.harnesses.map(harness => <option value={harness.id} key={harness.id}>{harness.name}</option>)}</select></label>
       {state && !state.harnesses.length && <p className="ai-empty ai-configure"><strong>Configure a local AI harness</strong><br />Add a signed-in Claude, Codex, or OpenCode CLI to <code>~/.config/criever/config.json</code>.</p>}
       <div className="ai-review-action"><span>Review this diff<small>Findings stay private until you approve them.</small></span><button className="btn sm" disabled={!id} onClick={review}>Run AI review</button></div>
-      {reviewing > 0 && <div role="status" className="ai-review-progress"><AiActivity label="Reviewing changes" /><span>{reviewing} {reviewing === 1 ? 'review' : 'reviews'} running</span></div>}
-      {runs.length > 0 && <div className="ai-review-result" data-testid="ai/review-result" role="status"><strong>Review complete</strong><span>{state?.findings.length || state?.lookouts.length ? `${runs.length} ${runs.length === 1 ? 'review' : 'reviews'} · ${state?.findings.length ?? 0} findings · ${state?.lookouts.length ?? 0} look-outs. Nothing was published.` : 'No findings or look-outs. Nothing was published.'}</span></div>}
+       {(reviewing > 0 || liveReviews.length > 0) && <div role="status" className="ai-review-progress"><AiActivity label="Reviewing changes" /><span>{liveReviews.length || reviewing} {(liveReviews.length || reviewing) === 1 ? 'review' : 'reviews'} running</span></div>}
+       {liveReviews.map(review => <div className="ai-review-result" data-testid="ai/review-status" role="status" key={review.id}><strong>{phaseLabel(review.status)} · {review.harnessId}</strong><span>{review.message ?? 'Working through the review'}</span></div>)}
+       {activeReviews.filter(review => !isLive(review.status)).map(review => <div className={`ai-review-result ai-review-${review.status}`} data-testid="ai/review-status" role={review.status === 'failed' || review.status === 'incomplete' ? 'alert' : 'status'} key={review.id}><strong>{phaseLabel(review.status)}</strong><span>{review.error ?? review.message ?? 'No final result was persisted.'}</span></div>)}
+       {runs.length > 0 && <div className="ai-review-result" data-testid="ai/review-result" role="status"><strong>Review complete</strong><span>{state?.findings.length || state?.lookouts.length ? `${runs.length} ${runs.length === 1 ? 'review' : 'reviews'} · ${state?.findings.length ?? 0} findings · ${state?.lookouts.length ?? 0} look-outs. Nothing was published.` : 'No findings or look-outs. Nothing was published.'}</span></div>}
     </div>
     {error && <p role="alert" className="ai-error">{error}</p>}
     <div className="ai-content" id="ai-chat-panel" role="tabpanel" hidden={tab !== 'chat'}>
@@ -90,8 +102,15 @@ export function AiRail() {
         })}
       </section>
     </div>
-    <div className="ai-content" id="ai-findings-panel" role="tabpanel" hidden={tab !== 'findings'}><AiResultsList runs={runs} findings={state?.findings ?? []} lookouts={state?.lookouts ?? []} /></div>
+     <div className="ai-content" id="ai-findings-panel" role="tabpanel" hidden={tab !== 'findings'}><AiResultsList runs={runs} findings={state?.findings ?? []} lookouts={state?.lookouts ?? []} activeReviews={activeReviews} /></div>
     <div className="ai-rail-composer" hidden={tab !== 'chat'}><label className="ai-label">General question<textarea aria-label="General question" placeholder="Ask about the whole review…" value={question} onChange={event => { questionVersion.current++; setQuestion(event.target.value); }} /></label>
       <button className="btn primary sm" disabled={chatBusy || !id || !question.trim()} onClick={chat}>Ask AI</button><small>Private conversation · nothing is published</small></div>
   </aside>;
 }
+
+const LIVE_PHASES: readonly AiReviewPhase[] = ['starting', 'observing', 'classifying', 'completing'];
+const PHASE_LABELS: Readonly<Record<AiReviewPhase, string>> = {
+  starting: 'Review starting', observing: 'Review in progress', classifying: 'Review classifying results', completing: 'Review finishing', complete: 'Review complete', incomplete: 'Review incomplete', failed: 'Review failed',
+};
+function isLive(status: AiReviewPhase): boolean { return LIVE_PHASES.includes(status); }
+function phaseLabel(status: AiReviewPhase): string { return PHASE_LABELS[status]; }
