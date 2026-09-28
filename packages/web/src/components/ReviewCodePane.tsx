@@ -62,10 +62,10 @@ export function ReviewCodePane() {
     }));
     const contextualThreads = Object.entries(aiAtHead ? ai.data?.threads ?? {} : {}).flatMap(([threadId, messages]) => {
       const anchor = threadAnchor(threadId);
-      return anchor?.path === path ? [{ key: `ai-thread-${threadId}`, afterLine: { side: anchor.side, line: anchor.line }, node: <AiThreadCard threadId={threadId} messages={messages} /> }] : [];
+      return anchor?.path === path && !s.closedAiThreads.includes(threadId) ? [{ key: `ai-thread-${threadId}`, afterLine: { side: anchor.side, line: anchor.line }, node: <AiThreadCard threadId={threadId} messages={messages} /> }] : [];
     });
     return [...th, ...dr, ...cm, ...guidance, ...findings, ...contextualThreads];
-  }, [c, path, pr?.sourceHead, s.composer, s.selectedHarnessId, editing, invalidate, ai.data, aiAtHead, composerMode, close, refreshAi]);
+  }, [c, path, pr?.sourceHead, s.composer, s.selectedHarnessId, s.closedAiThreads, editing, invalidate, ai.data, aiAtHead, composerMode, close, refreshAi]);
 
   // A fileDeleted thread has no line to render under (its file is gone), but its displayPath still
   // names the file it was on — this is the "obvious place" the user looks for it.
@@ -76,7 +76,7 @@ export function ReviewCodePane() {
     return <div className="unanchored" data-testid="code/unanchored">{orphans.map(t => <ThreadCardFull key={t.root.id} thread={t} draftReplies={c.drafts.filter(d => d.parentId === t.root.id)} />)}</div>;
   }, [c, path]);
 
-  const fileThreads = Object.entries(ai.data?.threads ?? {}).filter(([threadId]) => path && threadId.startsWith(`file:${encodeURIComponent(path)}:`));
+  const fileThreads = Object.entries(ai.data?.threads ?? {}).filter(([threadId]) => path && threadId.startsWith(`file:${encodeURIComponent(path)}:`) && !s.closedAiThreads.includes(threadId));
   const fileAi = <div className="ai-file-context" data-testid="ai/file-thread">
     {fileThreads.map(([threadId, messages]) => <AiThreadCard key={threadId} threadId={threadId} messages={messages} />)}
     {aiTarget?.path === path && <AiQuestionComposer target={aiTarget} onCancel={() => setAiTarget(null)} onSent={() => setAiTarget(null)} />}

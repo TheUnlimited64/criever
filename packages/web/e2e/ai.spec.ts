@@ -98,6 +98,39 @@ test('contextual Q&A is separate from general chat and persists after reload', a
   await expect(page.getByRole('heading', { name: 'Conversation' }).locator('..')).toContainText('Summarize the repository change');
 });
 
+test('every configured harness is selectable for private questions and a closed thread reopens from the rail', async ({ page, request, baseURL }) => {
+  const ai = await request.get(`${baseURL}/api/ai`).then(response => response.json()) as { harnesses: { id: string }[] };
+  expect(ai.harnesses.map(harness => harness.id)).toContain('fixture-empty');
+  await page.goto('/');
+  await openFixtureFile(page);
+  await page.getByTestId('code/row/new/3/gutter').click();
+  await page.getByRole('button', { name: 'Ask AI privately' }).click();
+  const chooser = page.getByLabel('Private AI harness');
+  await expect(chooser.locator('option')).toHaveCount(ai.harnesses.length);
+  await chooser.selectOption('fixture-empty');
+  await page.getByRole('textbox', { name: 'Private question', exact: true }).fill('Which harness is reviewing this line?');
+  const sent = page.waitForRequest(req => req.url().endsWith('/api/ai/chat'));
+  await page.getByRole('button', { name: 'Send private question' }).click();
+  expect((await sent).postDataJSON()).toMatchObject({ harnessId: 'fixture-empty', path: 'src/api/devices.ts', line: 3 });
+  const thread = page.locator('[data-testid^="ai/thread/"]').filter({ hasText: 'Which harness is reviewing this line?' });
+  await expect(thread).toBeVisible();
+  await thread.getByRole('button', { name: 'Close private conversation' }).click();
+  await expect(thread).toHaveCount(0);
+  await page.reload();
+  await openFixtureFile(page);
+  await expect(thread).toHaveCount(0);
+  await page.getByTestId('header').getByRole('button', { name: 'AI', exact: true }).click();
+  await expect(page.getByLabel('AI harness').locator('option')).toHaveCount(ai.harnesses.length);
+  await page.locator('[data-testid^="ai/thread-summary/"]').filter({ hasText: 'Which harness is reviewing this line?' }).click();
+  await expect(thread).toBeVisible();
+  await expect(thread.getByLabel('Private AI harness')).toHaveValue('fixture-harness');
+  await thread.getByLabel('Private AI harness').selectOption('fixture-old');
+  await thread.getByRole('textbox', { name: 'Follow-up question' }).fill('One more question');
+  const followUp = page.waitForRequest(req => req.url().endsWith('/api/ai/chat'));
+  await thread.getByRole('button', { name: 'Send follow-up' }).click();
+  expect((await followUp).postDataJSON()).toMatchObject({ harnessId: 'fixture-old', path: 'src/api/devices.ts', line: 3 });
+});
+
 test('file question opens beside the code without guessing a line, then persists at the file header', async ({ page }) => {
   await page.goto('/');
   await openFixtureFile(page);
@@ -107,6 +140,11 @@ test('file question opens beside the code without guessing a line, then persists
   await expect(page.getByTestId('ai/file-thread')).toContainText('Fixture answer');
   await page.reload();
   await openFixtureFile(page);
+  await expect(page.getByTestId('ai/file-thread')).toContainText('What changed in this file?');
+  await page.getByTestId('ai/file-thread').getByRole('button', { name: 'Close private conversation' }).click();
+  await expect(page.getByTestId('ai/file-thread')).toHaveCount(0);
+  await page.getByTestId('header').getByRole('button', { name: 'AI', exact: true }).click();
+  await page.locator('[data-testid^="ai/thread-summary/"]').filter({ hasText: 'What changed in this file?' }).click();
   await expect(page.getByTestId('ai/file-thread')).toContainText('What changed in this file?');
 });
 
