@@ -3,13 +3,16 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ReviewMeta } from '@criever/shared';
+import { AiReviewChannel } from '../src/ai-review-channel';
 import { aiEndpoint } from '../src/ai-routes';
 import type { AiRunner } from '../src/ai';
 import { Git } from '../src/git';
 import { StateStore } from '../src/state';
+import { withReviewEvents } from './ai-review-test-helpers';
 
 const dirs: string[] = [];
-afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
+const channels: AiReviewChannel[] = [];
+afterEach(async () => { for (const channel of channels.splice(0)) await channel.close(); for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
 it('retains findings when changed lines resemble diff file headers', async () => {
   const root = mkdtempSync(join(tmpdir(), 'criever-ai-headers-'));
@@ -45,8 +48,14 @@ it('retains findings when changed lines resemble diff file headers', async () =>
     ], lookouts: [{ observationId: 'l1', path: 'demo.txt', line: 1, side: 'new', body: 'Check consumers' }] }),
   };
 
-  const response = await aiEndpoint(new Request('http://local/api/ai/review', { method: 'POST', body: JSON.stringify({ harnessId: 'fake' }) }), '/api/ai/review', { adapter, git, store, meta, base });
-  const result = await response?.json() as { findings: { path: string; side: string }[]; lookouts: { path: string; side: string }[] };
-  expect(result.findings.map(({ path, side }) => ({ path, side }))).toEqual([{ path: 'demo.txt', side: 'old' }, { path: 'demo.txt', side: 'new' }]);
-  expect(result.lookouts.map(({ path, side }) => ({ path, side }))).toEqual([{ path: 'demo.txt', side: 'new' }]);
+  const reviewChannel = new AiReviewChannel(store); await reviewChannel.start(); channels.push(reviewChannel);
+  const response = await aiEndpoint(new Request('http://local/api/ai/review', { method: 'POST', body: JSON.stringify({ harnessId: 'fake' }) }), '/api/ai/review', { adapter: withReviewEvents(adapter), git, store, meta, base, reviewChannel });
+  expect(response?.status).toBe(202);
+  const body: unknown = await response?.json();
+  if (typeof body !== 'object' || body === null || !('runId' in body) || typeof body.runId !== 'string') throw new Error('review run missing');
+  await reviewChannel.waitForCompletion(body.runId);
+  const findings = await store.loadAiFindings();
+  const lookouts = await store.loadAiLookouts();
+  expect(findings.map(({ path, side }) => ({ path, side }))).toEqual([{ path: 'demo.txt', side: 'old' }, { path: 'demo.txt', side: 'new' }]);
+  expect(lookouts.map(({ path, side }) => ({ path, side }))).toEqual([{ path: 'demo.txt', side: 'new' }]);
 });
