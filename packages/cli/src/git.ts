@@ -59,8 +59,12 @@ export class Git {
   }
 
   async diffFile(base: string, head: string, path: string, context: number): Promise<FileDiff | null> {
-    const r = await this.run(['diff', '-M', '--no-color', '--no-ext-diff', `-U${context}`, base, head, '--', path]);
-    return parseUnifiedDiff(r.stdout)[0] ?? null;
+    const args = ['diff', '-M', '--no-color', '--no-ext-diff', `-U${context}`, base, head, '--'];
+    const initial = parseUnifiedDiff((await this.run([...args, path])).stdout)[0] ?? null;
+    if (initial?.status !== 'A') return initial;
+    const oldPath = (await this.changedFiles(base, head)).find(file => file.status === 'R' && file.newPath === path)?.oldPath;
+    if (!oldPath) return initial;
+    return parseUnifiedDiff((await this.run([...args, oldPath, path])).stdout)[0] ?? null;
   }
 
   async show(commit: string, path: string): Promise<string | null> {

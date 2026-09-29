@@ -7,6 +7,9 @@ import type { StateStore } from './state';
 import { buildThreads } from './threads';
 import { publishDrafts } from './publish';
 import { UserError } from './errors';
+import type { AiRunner } from './ai';
+import type { AiReviewChannel } from './ai-review-channel';
+import { aiEndpoint } from './ai-routes';
 
 export interface ServerDeps {
   git: Git; store: StateStore; provider: Provider;
@@ -18,6 +21,8 @@ export interface ServerDeps {
   // Set only when startup carried local review comments over as drafts, so a
   // successful publish can mark the source comment done and stop offering it again.
   localReview?: LocalReviewStore | null;
+  ai?: AiRunner;
+  reviewChannel?: AiReviewChannel;
 }
 
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
@@ -94,11 +99,18 @@ export function createHandler(d: ServerDeps) {
     return new Response(f);
   }
 
-  return async function handler(req: Request): Promise<Response> {
+  return async function handler(req: Request, server?: { timeout(request: Request, seconds: number): void }): Promise<Response> {
     const url = new URL(req.url); const p = url.pathname; const q = url.searchParams;
     const body = async <T,>() => (await req.json()) as T;
     try {
       if (!p.startsWith('/api/')) return serveStatic(p);
+      if (p.startsWith('/api/ai/') && req.method !== 'GET' && req.headers.has('origin') && req.headers.get('origin') !== url.origin) return err('cross-origin AI request rejected', 403);
+      if (p.startsWith('/api/ai/') && (p === '/api/ai/chat' || p === '/api/ai/review' || p.endsWith('/reword') || req.method === 'PATCH') && !req.headers.get('content-type')?.toLowerCase().startsWith('application/json')) return err('JSON content type required', 415);
+      if (d.ai) {
+        if (req.method === 'POST' && (p === '/api/ai/chat' || p === '/api/ai/review' || p.endsWith('/reword'))) server?.timeout(req, 0);
+        const aiResponse = await aiEndpoint(req, p, { adapter: d.ai, store: d.store, git: d.git, meta: d.meta, base: d.mergeBase, reviewChannel: d.reviewChannel });
+        if (aiResponse) return aiResponse;
+      }
       if (req.method === 'GET') {
         if (p === '/api/pr') return json(await prInfo());
         if (p === '/api/files') return json(await files(q.get('base') ?? d.mergeBase, q.get('head') ?? head()));

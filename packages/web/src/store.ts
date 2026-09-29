@@ -6,6 +6,12 @@ export type Overlay = null | 'publish' | 'palette' | 'search' | 'keys' | 'find' 
 export interface Range { base: string; head: string }
 export interface ComposerTarget { path: string; line: number; side: Side; endLine?: number; parentId?: number }
 const ls = (k: string, d: string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
+const closedThreads = (): string[] => {
+  try {
+    const saved: unknown = JSON.parse(ls('criever.closedAiThreads', '[]'));
+    return Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : [];
+  } catch { return []; }
+};
 
 interface S {
   currentPath: string | null; setCurrentPath: (p: string | null) => void;
@@ -16,6 +22,10 @@ interface S {
   split: boolean; toggleSplit: () => void;
   context: number; setContext: (n: number) => void;
   overlay: Overlay; setOverlay: (o: Overlay) => void;
+  aiOpen: boolean; setAiOpen: (open: boolean) => void;
+  aiJump: { path: string; side: Side; line: number } | null; setAiJump: (target: { path: string; side: Side; line: number } | null) => void;
+  selectedHarnessId: string; setSelectedHarnessId: (id: string) => void;
+  closedAiThreads: readonly string[]; setThreadClosed: (id: string, closed: boolean) => void;
   composer: ComposerTarget | null; setComposer: (c: ComposerTarget | null) => void;
   selection: { side: Side; from: number; to: number } | null; setSelection: (sel: { side: Side; from: number; to: number } | null) => void;
   focusedThread: number | null; setFocusedThread: (id: number | null) => void;
@@ -33,6 +43,15 @@ export const useStore = create<S>((set) => ({
   toggleSplit: () => set(s => { try { localStorage.setItem('criever.split', s.split ? '0' : '1'); } catch {} return { split: !s.split }; }),
   context: 3, setContext: n => set({ context: n }),
   overlay: null, setOverlay: o => set({ overlay: o }),
+  aiOpen: false, setAiOpen: aiOpen => set({ aiOpen }),
+  aiJump: null, setAiJump: aiJump => set({ aiJump }),
+  selectedHarnessId: '', setSelectedHarnessId: selectedHarnessId => set({ selectedHarnessId }),
+  closedAiThreads: closedThreads(), setThreadClosed: (id, closed) => set(state => {
+    const closedAiThreads = closed ? [...new Set([...state.closedAiThreads, id])] : state.closedAiThreads.filter(threadId => threadId !== id);
+    try { localStorage.setItem('criever.closedAiThreads', JSON.stringify(closedAiThreads)); }
+    catch { return { closedAiThreads }; }
+    return { closedAiThreads };
+  }),
   composer: null, setComposer: c => set({ composer: c }),
   selection: null, setSelection: sel => set({ selection: sel }),
   focusedThread: null, setFocusedThread: id => set({ focusedThread: id }),

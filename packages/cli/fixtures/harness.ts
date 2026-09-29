@@ -4,14 +4,53 @@ import { join, dirname } from 'node:path';
 import { buildFixtureRepo } from './repo';
 import { startStubBitbucket } from './stub-bitbucket';
 import { startup } from '../src/startup';
+import type { AiRunner } from '../src/ai';
 import { createHandler } from '../src/server';
 import { StateStore } from '../src/state';
 import { LocalReviewStore, emptyReview } from '../src/localreview';
+import { AiReviewChannel } from '../src/ai-review-channel';
+import { withReviewEvents } from '../test/ai-review-test-helpers';
 
 const args = process.argv.slice(2);
 const flag = (n: string) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
 const port = +(flag('--port') ?? 4799);
 const staticDir = flag('--static') ?? (existsSync(join(import.meta.dir, '../../web/dist')) ? join(import.meta.dir, '../../web/dist') : null);
+
+function reviewed<F extends { readonly body: string }, L extends { readonly body: string }>(findings: readonly F[], lookouts: readonly L[]): string {
+  return JSON.stringify({ status: 'complete', limitations: [],
+    observations: [...findings.map((item, index) => ({ id: `f${index}`, evidence: item.body, disposition: 'finding' })), ...lookouts.map((item, index) => ({ id: `l${index}`, evidence: item.body, disposition: 'lookout' }))],
+    findings: findings.map((item, index) => ({ ...item, observationId: `f${index}` })),
+    lookouts: lookouts.map((item, index) => ({ ...item, observationId: `l${index}` })),
+  });
+}
+
+const fixtureAi: AiRunner = {
+  list: () => [{ id: 'fixture-harness', name: 'Fixture AI', kind: 'claude' }, { id: 'fixture-empty', name: 'Fixture AI (no findings)', kind: 'claude' }, { id: 'fixture-old', name: 'Fixture AI (old-side)', kind: 'claude' }, { id: 'fixture-incomplete', name: 'Fixture AI (incomplete)', kind: 'claude' }],
+  run: async (id, prompt) => {
+    if (prompt.includes('{"finding":')) return 'Fixture reword';
+    if (prompt.includes('Show final answer only')) return 'I’ll inspect the code first.\n<answer>Yes. Full IRIs must use exact IRI lookup.</answer>';
+    if (prompt.includes('Show unmarked response')) return 'I’ll inspect the code first.';
+    if (prompt.includes('Render markdown')) return '<answer>A **bold answer** with `Row.from(QuerySolution)` and [source](https://example.test/source).\n\n- first check\n- second check\n- [unsafe](javascript:alert(1))</answer>';
+    if (prompt.includes('\n\nConversation:\n')) return '<answer>Fixture answer</answer>';
+    if (id === 'fixture-incomplete') return JSON.stringify({ status: 'incomplete', limitations: ['A required caller was unavailable'], observations: [], findings: [], lookouts: [] });
+    if (id === 'fixture-empty') return reviewed([], []);
+    if (id === 'fixture-old') return reviewed([{ path: 'src/api/devices.ts', line: 4, side: 'old', body: 'Old-side regression', severity: 'warning' }], []);
+    return reviewed([
+        { path: 'src/api/devices.ts', line: 3, side: 'new', body: 'Potential null access', severity: 'warning' },
+        { path: 'src/api/devices.ts', line: 5, side: 'new', body: 'Secondary finding', severity: 'info' },
+      ], [{ path: 'src/api/devices.ts', line: 3, side: 'new', body: 'Check authorization' }]);
+  },
+};
+
+function resetAiState(deps: { store: StateStore }) {
+  delete deps.store.state.aiConversation;
+  delete deps.store.state.aiThreads;
+  delete deps.store.state.aiFindings;
+  delete deps.store.state.aiLookouts;
+  delete deps.store.state.aiReviewResult;
+  delete deps.store.state.aiReviewRuns;
+  delete deps.store.state.approvedAiFindings;
+}
 
 async function runBitbucket() {
   const tmp = mkdtempSync(join(tmpdir(), 'criever-e2e-'));
@@ -39,25 +78,37 @@ async function runBitbucket() {
     env: { ATLASSIAN_USER_EMAIL: 'alex@example.test', ATLASSIAN_API_TOKEN: 'synthetic-token', CRIEVER_STATE_DIR: stateDir, BITBUCKET_API_BASE: stub.base },
   });
   const vscodeOpened: { path: string; line: number }[] = [];
+  const reviewChannel = new AiReviewChannel(deps.store); await reviewChannel.start();
   // One deps object for the process lifetime: createHandler's routes (POST /api/publish,
   // /api/refresh) reassign d.comments/d.pr/d.mergeBase/d.commits on this same object to reflect
   // a fresh Bitbucket read. Rebuilding a spread copy per request would discard those writes the
   // instant the response finishes, so the next request would look at stale data again.
-  const handlerDeps = { ...deps, staticDir, vscode: { open: async (path: string, line: number) => { vscodeOpened.push({ path, line }); return `http://127.0.0.1:1/?fake&path=${encodeURIComponent(path)}&line=${line}`; } } };
+  const handlerDeps = { ...deps, ai: withReviewEvents(fixtureAi), reviewChannel, staticDir, vscode: { open: async (path: string, line: number) => { vscodeOpened.push({ path, line }); return `http://127.0.0.1:1/?fake&path=${encodeURIComponent(path)}&line=${line}`; } } };
   const handler = createHandler(handlerDeps);
   const server = Bun.serve({
     hostname: '127.0.0.1', port,
-    fetch: async (req) => {
+    fetch: async (req, server) => {
       const p = new URL(req.url).pathname;
       if (p === '/__vscode') return Response.json(vscodeOpened);
       if (p === '/__stub/recorded') return Response.json(stub.recorded());
       if (p === '/__reset') {
         stub.reset();
+        await reviewChannel.close();
         handlerDeps.store.state.drafts = []; await handlerDeps.store.save();
+        resetAiState(handlerDeps);
+        await handlerDeps.store.save();
         handlerDeps.comments = await handlerDeps.provider.listComments();
         return Response.json({ ok: true });
       }
-      return handler(req);
+      if (p === '/__seed/old-ai-chat') {
+        await handlerDeps.store.saveAiThread(`general:${repo.c2}`, [{ role: 'user', content: 'Previous head question' }, { role: 'assistant', content: 'Previous head answer' }]);
+        return Response.json({ ok: true });
+      }
+      if (p === '/__seed/old-line-ai-chat') {
+        await handlerDeps.store.saveAiThread(`src/api/devices.ts:new:3:${repo.c2}`, [{ role: 'user', content: 'Previous head line question' }, { role: 'assistant', content: 'Previous head line answer' }]);
+        return Response.json({ ok: true });
+      }
+      return handler(req, server);
     },
   });
   console.log(JSON.stringify({ url: `http://127.0.0.1:${server.port}`, stubBase: `http://127.0.0.1:${stub.port}`, repoRoot: repo.root }));
@@ -86,19 +137,31 @@ async function runLocal() {
   await seed();
 
   const deps = await startup({ cwd: repo.root, log: () => {}, env: { CRIEVER_STATE_DIR: stateDir }, local: true, base: repo.main, head: repo.c3 });
-  const handlerDeps = { ...deps, staticDir, vscode: { open: async (path: string, line: number) => `http://127.0.0.1:1/?fake&path=${encodeURIComponent(path)}&line=${line}` } };
+  const reviewChannel = new AiReviewChannel(deps.store); await reviewChannel.start();
+  const handlerDeps = { ...deps, ai: withReviewEvents(fixtureAi), reviewChannel, staticDir, vscode: { open: async (path: string, line: number) => `http://127.0.0.1:1/?fake&path=${encodeURIComponent(path)}&line=${line}` } };
   const handler = createHandler(handlerDeps);
   const server = Bun.serve({
     hostname: '127.0.0.1', port,
-    fetch: async (req) => {
+    fetch: async (req, server) => {
       const p = new URL(req.url).pathname;
       if (p === '/__reset') {
         await seed();
+        await reviewChannel.close();
         handlerDeps.store.state.drafts = []; await handlerDeps.store.save();
+        resetAiState(handlerDeps);
+        await handlerDeps.store.save();
         handlerDeps.comments = await handlerDeps.provider.listComments();
         return Response.json({ ok: true });
       }
-      return handler(req);
+      if (p === '/__seed/old-ai-chat') {
+        await handlerDeps.store.saveAiThread(`general:${repo.c2}`, [{ role: 'user', content: 'Previous head question' }, { role: 'assistant', content: 'Previous head answer' }]);
+        return Response.json({ ok: true });
+      }
+      if (p === '/__seed/old-line-ai-chat') {
+        await handlerDeps.store.saveAiThread(`src/api/devices.ts:new:3:${repo.c2}`, [{ role: 'user', content: 'Previous head line question' }, { role: 'assistant', content: 'Previous head line answer' }]);
+        return Response.json({ ok: true });
+      }
+      return handler(req, server);
     },
   });
   console.log(JSON.stringify({ url: `http://127.0.0.1:${server.port}`, repoRoot: repo.root }));

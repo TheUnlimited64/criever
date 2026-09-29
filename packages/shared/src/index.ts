@@ -22,6 +22,40 @@ export interface PrState {
   anchors: Record<number, Anchor>;
   viewed: Record<string, string>;
   lastSeenHead?: string;
+  aiConversation?: AiMessage[];
+  aiThreads?: Record<string, AiMessage[]>;
+  aiFindings?: AiFinding[];
+  aiLookouts?: AiLookout[];
+  aiReviewResult?: AiReviewSummary;
+  aiReviewRuns?: AiReviewRun[];
+  approvedAiFindings?: string[];
+}
+
+export interface AiMessage { readonly role: 'user' | 'assistant'; readonly content: string }
+export interface AiFinding { readonly id: string; readonly path: string; readonly line: number; readonly side: Side; readonly body: string; readonly severity: 'info' | 'warning' | 'error'; readonly anchorCommit: string; readonly reviewId?: string }
+export interface AiLookout { readonly id: string; readonly body: string; readonly findingId?: string; readonly path?: string; readonly line?: number; readonly side?: Side; readonly anchorCommit?: string; readonly reviewId?: string }
+export interface AiReviewSummary { readonly head: string; readonly findings: number; readonly lookouts: number; readonly first: { readonly path: string; readonly side: Side; readonly line: number } | null }
+export interface AiReviewRun extends AiReviewSummary { readonly id: string; readonly harnessId: string; readonly completedAt: string }
+export type AiReviewPhase = 'starting' | 'observing' | 'classifying' | 'completing' | 'complete' | 'incomplete' | 'failed';
+export type AiObservationDisposition = 'pending' | 'finding' | 'lookout' | 'dismissed';
+export interface AiReviewObservation {
+  readonly id: string;
+  readonly evidence: string;
+  readonly disposition: AiObservationDisposition;
+  readonly reason?: string;
+}
+export interface AiActiveReview {
+  readonly id: string;
+  readonly harnessId: string;
+  readonly head: string;
+  readonly startedAt: string;
+  readonly status: AiReviewPhase;
+  readonly message?: string;
+  readonly error?: string;
+  readonly completedAt?: string;
+  readonly observations: readonly AiReviewObservation[];
+  readonly findings: readonly AiFinding[];
+  readonly lookouts: readonly AiLookout[];
 }
 
 export type AnchorStatus =

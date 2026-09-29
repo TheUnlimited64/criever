@@ -6,6 +6,7 @@ import { FilesPane } from './components/FilesPane';
 import { Keymap } from './components/Keymap';
 import { ReviewCodePane } from './components/ReviewCodePane';
 import { CommentsRail } from './components/CommentsRail';
+import { AiRail } from './components/AiRail';
 import { Footer } from './components/Footer';
 import { Toast } from './components/Toast';
 import { PublishSheet } from './components/PublishSheet';
@@ -62,16 +63,17 @@ function useKeyboard() {
 
 export function App() {
   const files = useFiles(); const { currentPath, openDiff } = useStore();
-  const overlay = useStore(s => s.overlay);
+  const overlay = useStore(s => s.overlay); const aiOpen = useStore(s => s.aiOpen);
   useEffect(() => { if (!currentPath && files.data?.[0]) openDiff(files.data[0].path); }, [files.data, currentPath, openDiff]);
   useKeyboard();
   return (
     <div className="app">
       <Header />
-      <div className="main">
+      <div className={`main${aiOpen ? ' ai-open' : ''}`}>
         <FilesPane />
         <ReviewCodePane />
-        <CommentsRail />
+        <div className="rail-slot" hidden={aiOpen}><CommentsRail /></div>
+        <div className="rail-slot" hidden={!aiOpen}><AiRail /></div>
       </div>
       <Footer />
       <Toast />

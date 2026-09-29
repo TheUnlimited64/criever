@@ -5,10 +5,14 @@ import { useComments, usePr } from '../hooks';
 import { useStore } from '../store';
 import { Avatar } from './ThreadCard';
 import { ThreadCardFull } from './ThreadCardFull';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../api';
+import { AiResultsList } from './AiResultsList';
 
 const first = (s: string) => emojify(s.split('\n')[0] ?? '');
 export function CommentsRail() {
   const c = useComments().data; const local = usePr().data?.kind === 'local'; const { openDiff, setFocusedThread } = useStore();
+  const ai = useQuery({ queryKey: ['ai'], queryFn: api.ai }).data;
   if (!c) return <aside className="pane rail" data-testid="comments" />;
   // Resolved wins over authorship (a resolved thread always reads as resolved, no matter who wrote
   // it); among the rest, the agent group wins over "changed since" — the point of the group is to
@@ -42,6 +46,7 @@ export function CommentsRail() {
       <Group id="drafts" title="Drafts" n={c.drafts.length}>{c.drafts.map(d => (
         <button key={d.id} className="item" data-testid={`comments/draft/${d.id}`} onClick={() => goDraft(d)}><span className="pip draft" /><span><div className="loc">{d.path.split('/').pop()}:{d.line}{d.parentId ? ' · reply' : ''}</div><div className="txt">{first(d.body)}</div></span></button>))}</Group>
       {local && <Group id="agent" title="From the agent" n={agent.length}>{agent.map(t => <Row key={t.root.id} t={t} pip="agent" agentPip />)}</Group>}
+      <Group id="ai" title="AI findings" n={(ai?.findings.length ?? 0) + (ai?.lookouts.length ?? 0)}><AiResultsList runs={ai?.reviewRuns ?? []} findings={ai?.findings ?? []} lookouts={ai?.lookouts ?? []} /></Group>
       <Group id="changed" title={changedSinceHeading(changed)} n={changed.length}>{changed.map(t => <Row key={t.root.id} t={t} pip="changed" />)}</Group>
       <Group id="open" title="Open" n={open.length}>{open.map(t => <Row key={t.root.id} t={t} pip="open" />)}</Group>
       <Group id="resolved" title="Resolved" n={resolved.length}>{resolved.map(t => <Row key={t.root.id} t={t} pip="resolved" muted />)}</Group>
