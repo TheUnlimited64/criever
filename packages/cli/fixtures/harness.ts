@@ -77,7 +77,7 @@ async function runLocal() {
   const stateDir = join(tmp, 'state');
 
   const seed = async () => {
-    const store = new LocalReviewStore(LocalReviewStore.path(repo.root));
+    const store = new LocalReviewStore(LocalReviewStore.path(repo.root, 'feat/virtual-list-review'));
     store.review = emptyReview(repo.main, repo.c3);
     await store.save();
     for (const c of AGENT_COMMENTS) await store.add({ ...c, author: 'agent', agentName: 'coding-agent', anchorCommit: repo.c3 });

@@ -1,5 +1,6 @@
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { createHash } from 'node:crypto';
 import type { LocalComment, LocalReview } from '@criever/shared';
 
 const LOCK_STALE_MS = 10_000;
@@ -50,8 +51,10 @@ export class LocalReviewStore {
   warning: string | null = null;
   constructor(public readonly file: string) {}
 
-  static path(repoRoot: string): string {
-    return join(repoRoot, '.criever', 'review.json');
+  static path(repoRoot: string, branch?: string): string {
+    if (branch == null) return join(repoRoot, '.criever', 'review.json');
+    const key = createHash('sha256').update(branch).digest('hex');
+    return join(repoRoot, '.criever', 'reviews', key, 'review.json');
   }
 
   async load(): Promise<void> {

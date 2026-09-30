@@ -124,7 +124,7 @@ function cmdList(store: LocalReviewStore, args: string[]): number {
 export async function runCommentsCli(argv: string[], cwd: string): Promise<number> {
   try {
     const git = await Git.open(cwd);
-    const reviewPath = LocalReviewStore.path(git.root);
+    const reviewPath = LocalReviewStore.path(git.root, await git.currentBranch());
     if (!existsSync(reviewPath)) {
       console.error('No local review found in this repo.\nRun `criever --local` first to start one.');
       return 2;

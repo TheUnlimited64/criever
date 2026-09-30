@@ -150,7 +150,7 @@ criever comment resolve <id>
 criever comment rm <id>
 ```
 
-These work whether or not the UI is running — they operate directly on `.criever/review.json`.
+These work whether or not the UI is running — they operate directly on the checked-out branch's local review file.
 
 - `--body-file -` reads stdin, so an agent can pipe a multi-line finding without quoting hell.
 - Default `--author` is `agent` for `comment add` (the CLI is the agent's surface); the UI writes `me`. Both are overridable.
@@ -164,11 +164,15 @@ These work whether or not the UI is running — they operate directly on `.criev
 
 ### Where comments live
 
-`<repo>/.criever/review.json` — gitignored by default, because a local review is scratch. Committing it anyway is a deliberate opt-in for handing a whole review to someone else. The CLI and a running criever UI read and write the same file safely: atomic `.tmp` + rename behind a serialized write queue, plus an advisory cross-process `.lock`, tested against concurrent writers.
+`<repo>/.criever/reviews/<branch-key>/review.json` — gitignored by default, because a local review is scratch. The branch key is the SHA-256 hash of the checked-out branch name. Each branch keeps its own comments and `state.json` (drafts, anchors, and viewed marks), so switching branches does not mix reviews. Returning to a branch restores its review; advancing commits or changing the base on that branch keeps its comments. The CLI and a running criever UI read and write the same file safely: atomic `.tmp` + rename behind a serialized write queue, plus an advisory cross-process `.lock`, tested against concurrent writers.
+
+A running local review stays bound to the branch it opened on, even after a checkout; start a new criever instance to review the new branch. Local comments carried into a Bitbucket PR also come only from that branch's review.
+
+Older `<repo>/.criever/review.json` files do not record a branch identity. They are preserved untouched, but are not displayed on an arbitrary branch. Startup prints the legacy file and the current branch's review path. To recover an old review, stop criever, check out the branch those comments belong to, and copy the legacy file to the printed review path (back up any existing destination first). Older repo-wide `pr-0.json` state is likewise left untouched rather than imported into an unknown branch.
 
 ### Drafts are private until you press Save
 
-A comment you write in the browser is a **draft**: it lives in your browser session only, not yet in `.criever/review.json`. The agent can't see it and `criever comments list` won't show it until you press **Save** (or `⌘↩`). This is the same gate as "publish" in the Bitbucket flow, it just moves in-repo instead of out to Bitbucket — but it's easy to forget when there's no PR involved, so: if you're waiting for the agent to react to something you just typed, check you saved it first.
+A comment you write in the browser is a **draft**: it lives in the branch's private state, not yet in its shared review file. The agent can't see it and `criever comments list` won't show it until you press **Save** (or `⌘↩`). This is the same gate as "publish" in the Bitbucket flow, it just moves in-repo instead of out to Bitbucket — but it's easy to forget when there's no PR involved, so: if you're waiting for the agent to react to something you just typed, check you saved it first.
 
 ### Writing an agent prompt
 

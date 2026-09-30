@@ -1,5 +1,6 @@
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
-import { basename, dirname, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { BitbucketClient, BitbucketError } from './bitbucket';
 import { defaultPaths, loadCredentials } from './config';
 import { UserError } from './errors';
@@ -63,9 +64,9 @@ export async function startup(opts: { cwd: string; env: Env; fetch?: typeof fetc
   const store = new StateStore(StateStore.path(paths.stateDir, ws, repo, pr.id)); await store.load();
   if (store.warning) opts.log(store.warning);
 
-  // Carry over unresolved comments left in .criever/review.json before this PR was found as drafts,
+  // Carry over unresolved comments from this branch's local review as drafts,
   // so the Publish sheet can be reviewed before anything is sent. load() is a no-op when the file doesn't exist.
-  const localReview = new LocalReviewStore(LocalReviewStore.path(git.root));
+  const localReview = new LocalReviewStore(LocalReviewStore.path(git.root, branch));
   await localReview.load();
   await carryOverLocalComments(localReview, store, pr.id);
 
@@ -147,7 +148,10 @@ async function excludeCrieverDir(git: Git, log: (s: string) => void): Promise<vo
 }
 
 async function startupLocal(opts: { env: Env; log: (s: string) => void; base?: string; head?: string }, paths: ReturnType<typeof defaultPaths>, git: Git, reason?: string): Promise<Omit<ServerDeps, 'staticDir' | 'vscode'>> {
-  const head = opts.head ?? 'HEAD';
+  const branch = await git.currentBranch();
+  // HEAD would follow a checkout in a running server while its comments still belong
+  // to the original branch. Keep that review on its branch, including new commits.
+  const head = opts.head == null || opts.head === 'HEAD' ? `refs/heads/${branch}` : opts.head;
   let base = opts.base;
   if (!base) {
     const def = await defaultBranchRef(git);
@@ -162,7 +166,6 @@ async function startupLocal(opts: { env: Env; log: (s: string) => void; base?: s
       base = parent.stdout.trim();
     }
   }
-  const branch = await git.currentBranch();
 
   // No PR means no workspace/repo pair from Bitbucket; derive one from the remote when there is
   // one (so state stays alongside a same-repo Bitbucket review), else fall back to the repo's
@@ -173,10 +176,14 @@ async function startupLocal(opts: { env: Env; log: (s: string) => void; base?: s
     ({ workspace: ws, repo } = parseRemote(url));
   } catch { /* no remote at all: keep the directory-name fallback */ }
 
-  const reviewStore = new LocalReviewStore(LocalReviewStore.path(git.root));
+  const reviewStore = new LocalReviewStore(LocalReviewStore.path(git.root, branch));
   await reviewStore.load();
   await reviewStore.ensureReview(base, head);
   if (reviewStore.warning) opts.log(reviewStore.warning);
+  const legacyPath = LocalReviewStore.path(git.root);
+  if (existsSync(legacyPath)) {
+    opts.log(`Legacy comments are preserved in ${legacyPath}, but their branch is unknown. To restore them, stop criever and copy that file to ${reviewStore.file} on the branch they belong to.`);
+  }
   await excludeCrieverDir(git, opts.log);
 
   const provider = new LocalProvider(git, reviewStore, base, head, branch);
@@ -186,10 +193,9 @@ async function startupLocal(opts: { env: Env; log: (s: string) => void; base?: s
   opts.log(`${reason ? `${reason} — ` : ''}starting a local review ${meta.destinationHead.slice(0, 7)}..${meta.sourceHead.slice(0, 7)}`);
   const [comments, commits] = await Promise.all([provider.listComments(), provider.listCommits()]);
 
-  // Local reviews use a fixed id (0) for the state path, unlike a PR's id — the
-  // draft/anchor/viewed cache should survive base/head moving across sessions, since
-  // .criever/review.json itself is one file per repo, not one per range.
-  const store = new StateStore(StateStore.path(paths.stateDir, ws, repo, 0));
+  // Drafts and anchor ids belong to the same branch as the saved comments, not
+  // the repo-wide synthetic PR id. Commit advances keep both files in place.
+  const store = new StateStore(join(dirname(reviewStore.file), 'state.json'));
   await store.load();
   if (store.warning) opts.log(store.warning);
 

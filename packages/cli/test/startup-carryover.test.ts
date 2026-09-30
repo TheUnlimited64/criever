@@ -40,7 +40,7 @@ describe('carry-over of local comments into a found PR', () => {
   it('unresolved local comments become drafts; resolved ones do not', async () => {
     PR = { id: 9, title: 'T', created_on: '', author: { display_name: 'A', uuid: '' }, links: { html: { href: 'u' } }, source: { branch: { name: 'feat' }, commit: { hash: head } }, destination: { branch: { name: 'main' }, commit: { hash: await sh(work, ['rev-parse', 'main']) } } };
 
-    const review = new LocalReviewStore(LocalReviewStore.path(work));
+    const review = new LocalReviewStore(LocalReviewStore.path(work, 'feat'));
     await review.load();
     const unresolved = await review.add({ path: 'a.txt', line: 1, side: 'new', body: 'looks off', author: 'agent', agentName: 'coding-agent', anchorCommit: head });
     const resolved = await review.add({ path: 'a.txt', line: 1, side: 'new', body: 'fixed already', author: 'me', anchorCommit: head });
@@ -60,7 +60,7 @@ describe('carry-over of local comments into a found PR', () => {
   it('a second startup after publishing imports nothing (idempotency)', async () => {
     PR = { id: 9, title: 'T', created_on: '', author: { display_name: 'A', uuid: '' }, links: { html: { href: 'u' } }, source: { branch: { name: 'feat' }, commit: { hash: head } }, destination: { branch: { name: 'main' }, commit: { hash: await sh(work, ['rev-parse', 'main']) } } };
 
-    const review = new LocalReviewStore(LocalReviewStore.path(work));
+    const review = new LocalReviewStore(LocalReviewStore.path(work, 'feat'));
     await review.load();
     const unresolved = await review.add({ path: 'a.txt', line: 1, side: 'new', body: 'N+1 query here', author: 'agent', anchorCommit: head });
 
@@ -80,7 +80,7 @@ describe('carry-over of local comments into a found PR', () => {
   it('a reply to a not-yet-published parent stays local instead of guessing a provider id', async () => {
     PR = { id: 9, title: 'T', created_on: '', author: { display_name: 'A', uuid: '' }, links: { html: { href: 'u' } }, source: { branch: { name: 'feat' }, commit: { hash: head } }, destination: { branch: { name: 'main' }, commit: { hash: await sh(work, ['rev-parse', 'main']) } } };
 
-    const review = new LocalReviewStore(LocalReviewStore.path(work));
+    const review = new LocalReviewStore(LocalReviewStore.path(work, 'feat'));
     await review.load();
     const root = await review.add({ path: 'a.txt', line: 1, side: 'new', body: 'root', author: 'me', anchorCommit: head });
     await review.reply(root.id, { path: 'a.txt', line: 1, side: 'new', body: 'a reply', author: 'agent', anchorCommit: head });
