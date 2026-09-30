@@ -29,7 +29,7 @@ describe('the agent loop, end to end', () => {
     writeFileSync(join(dir, 'a.ts'), 'l1\nl2x\nl3\n');
     await sh(dir, ['add', '.']); await sh(dir, ['commit', '-qm', 'feat']);
     const head = await sh(dir, ['rev-parse', 'HEAD']);
-    const seedStore = new LocalReviewStore(LocalReviewStore.path(dir)); await seedStore.load(); await seedStore.ensureReview(base, head);
+    const seedStore = new LocalReviewStore(LocalReviewStore.path(dir, 'main')); await seedStore.load(); await seedStore.ensureReview(base, head);
 
     // 1. the agent finds something and adds it via the CLI, no server running
     const cap = captureLogs();

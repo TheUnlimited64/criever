@@ -22,7 +22,7 @@ beforeEach(async () => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 async function initReview() {
-  const store = new LocalReviewStore(LocalReviewStore.path(dir));
+  const store = new LocalReviewStore(LocalReviewStore.path(dir, 'main'));
   await store.load();
   await store.ensureReview('main', 'HEAD');
 }
@@ -48,7 +48,7 @@ describe('runCommentsCli', () => {
     await initReview();
     const code = await runCommentsCli(['comment', 'add', '--path', 'a.ts', '--line', '2', '--body', 'N+1 query here'], dir);
     expect(code).toBe(0);
-    const store = new LocalReviewStore(LocalReviewStore.path(dir)); await store.load();
+    const store = new LocalReviewStore(LocalReviewStore.path(dir, 'main')); await store.load();
     expect(store.review.comments).toHaveLength(1);
     const c = store.review.comments[0]!;
     expect(c).toMatchObject({ path: 'a.ts', line: 2, side: 'new', body: 'N+1 query here', author: 'agent', resolved: false, parentId: null });
@@ -59,7 +59,7 @@ describe('runCommentsCli', () => {
     await initReview();
     await runCommentsCli(['comment', 'add', '--path', 'a.ts', '--line', '1', '--body', 'hi', '--agent-name', 'coding-agent'], dir);
     await runCommentsCli(['comment', 'add', '--path', 'a.ts', '--line', '1', '--body', 'hi human', '--author', 'me'], dir);
-    const store = new LocalReviewStore(LocalReviewStore.path(dir)); await store.load();
+    const store = new LocalReviewStore(LocalReviewStore.path(dir, 'main')); await store.load();
     expect(store.review.comments[0]).toMatchObject({ author: 'agent', agentName: 'coding-agent' });
     expect(store.review.comments[1]).toMatchObject({ author: 'me' });
     expect(store.review.comments[1]!.agentName).toBeUndefined();
@@ -68,12 +68,12 @@ describe('runCommentsCli', () => {
   it('--reply-to nests under the parent; an unknown parent exits 1 naming the fix', async () => {
     await initReview();
     await runCommentsCli(['comment', 'add', '--path', 'a.ts', '--line', '1', '--body', 'root'], dir);
-    const store0 = new LocalReviewStore(LocalReviewStore.path(dir)); await store0.load();
+    const store0 = new LocalReviewStore(LocalReviewStore.path(dir, 'main')); await store0.load();
     const rootId = store0.review.comments[0]!.id;
 
     const code = await runCommentsCli(['comment', 'add', '--path', 'a.ts', '--line', '1', '--body', 'reply', '--reply-to', String(rootId)], dir);
     expect(code).toBe(0);
-    const store1 = new LocalReviewStore(LocalReviewStore.path(dir)); await store1.load();
+    const store1 = new LocalReviewStore(LocalReviewStore.path(dir, 'main')); await store1.load();
     expect(store1.review.comments[1]).toMatchObject({ parentId: rootId, body: 'reply' });
 
     const cap = captureLogs();
@@ -87,15 +87,15 @@ describe('runCommentsCli', () => {
     await initReview();
     await runCommentsCli(['comment', 'add', '--path', 'a.ts', '--line', '1', '--body', 'a'], dir);
     await runCommentsCli(['comment', 'add', '--path', 'a.ts', '--line', '2', '--body', 'b'], dir);
-    const store0 = new LocalReviewStore(LocalReviewStore.path(dir)); await store0.load();
+    const store0 = new LocalReviewStore(LocalReviewStore.path(dir, 'main')); await store0.load();
     const [idA, idB] = store0.review.comments.map(c => c.id);
 
     expect(await runCommentsCli(['comment', 'resolve', String(idA)], dir)).toBe(0);
-    const store1 = new LocalReviewStore(LocalReviewStore.path(dir)); await store1.load();
+    const store1 = new LocalReviewStore(LocalReviewStore.path(dir, 'main')); await store1.load();
     expect(store1.review.comments.find(c => c.id === idA)!.resolved).toBe(true);
 
     expect(await runCommentsCli(['comment', 'rm', String(idB)], dir)).toBe(0);
-    const store2 = new LocalReviewStore(LocalReviewStore.path(dir)); await store2.load();
+    const store2 = new LocalReviewStore(LocalReviewStore.path(dir, 'main')); await store2.load();
     expect(store2.review.comments.find(c => c.id === idB)).toBeUndefined();
 
     const cap = captureLogs();
@@ -108,7 +108,7 @@ describe('runCommentsCli', () => {
   it('comments list --json returns nested replies', async () => {
     await initReview();
     await runCommentsCli(['comment', 'add', '--path', 'src/api/devices.ts', '--line', '42', '--body', 'N+1 query here', '--agent-name', 'coding-agent'], dir);
-    const store0 = new LocalReviewStore(LocalReviewStore.path(dir)); await store0.load();
+    const store0 = new LocalReviewStore(LocalReviewStore.path(dir, 'main')); await store0.load();
     const rootId = store0.review.comments[0]!.id;
     await runCommentsCli(['comment', 'add', '--path', 'src/api/devices.ts', '--line', '42', '--body', 'fixed in c0ffee1, recheck', '--author', 'me', '--reply-to', String(rootId)], dir);
 
@@ -128,7 +128,7 @@ describe('runCommentsCli', () => {
     await initReview();
     await runCommentsCli(['comment', 'add', '--path', 'a.ts', '--line', '1', '--body', 'a', '--author', 'me'], dir);
     await runCommentsCli(['comment', 'add', '--path', 'b.ts', '--line', '1', '--body', 'b'], dir);
-    const store0 = new LocalReviewStore(LocalReviewStore.path(dir)); await store0.load();
+    const store0 = new LocalReviewStore(LocalReviewStore.path(dir, 'main')); await store0.load();
     const [meId, agentId] = store0.review.comments.map(c => c.id);
     await runCommentsCli(['comment', 'resolve', String(meId)], dir);
 
@@ -163,7 +163,7 @@ describe('runCommentsCli', () => {
     const stderr = await new Response(p.stderr).text();
     expect(code, stderr).toBe(0);
 
-    const store = new LocalReviewStore(LocalReviewStore.path(dir)); await store.load();
+    const store = new LocalReviewStore(LocalReviewStore.path(dir, 'main')); await store.load();
     expect(store.review.comments[0]!.body).toBe(markdown.replace(/\n$/, ''));
   });
 

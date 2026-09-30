@@ -148,7 +148,7 @@ describe('LocalProvider', () => {
     expect(deps.meta.url).toBeNull();
     expect(deps.mergeBase).toBe(b);
     expect(deps.ws).toBe('local');
-    expect(existsSync(LocalReviewStore.path(tmp))).toBe(true);
+    expect(existsSync(LocalReviewStore.path(tmp, 'feat'))).toBe(true);
 
     rmSync(tmp, { recursive: true, force: true });
     rmSync(stateDir, { recursive: true, force: true });

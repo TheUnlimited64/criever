@@ -16,7 +16,7 @@ function toBbComment(c: LocalComment): BbComment {
   };
 }
 
-/** A review with no PR: any two git refs, diffed and commented on entirely through `.criever/review.json`. */
+/** A review with no PR: any two git refs, with comments saved in its branch's local store. */
 export class LocalProvider implements Provider {
   readonly kind = 'local' as const;
   constructor(private git: Git, private store: LocalReviewStore, private base: string, private head: string, private branch: string) {}
