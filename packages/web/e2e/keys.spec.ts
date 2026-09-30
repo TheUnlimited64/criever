@@ -47,3 +47,36 @@ test('. asks the server to open VS Code at the cursor line', async ({ page, requ
   const opened = await (await request.get('http://127.0.0.1:4799/__vscode')).json();
   expect(opened.at(-1)).toEqual({ path: 'src/devices/useDeviceRows.ts', line: 8 });
 });
+
+for (const { platform, modifier, key } of [
+  { platform: 'Win32', modifier: 'Ctrl', key: 'Control' },
+  { platform: 'MacIntel', modifier: 'Cmd', key: 'Meta' },
+]) {
+  test(`shortcut labels and file palette follow ${platform}`, async ({ page }) => {
+    await page.addInitScript(platform => {
+      Object.defineProperty(navigator, 'platform', { get: () => platform });
+    }, platform);
+    await page.goto('/');
+    await expect(page.getByTestId('header').locator('kbd').first()).toHaveText(`${modifier}+K`);
+    await expect(page.getByTestId('footer').locator('kbd').first()).toHaveText(`${modifier}+K`);
+
+    await page.keyboard.press(`${key}+k`);
+
+    await expect(page.getByTestId('filePalette')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Shift+?');
+    const chords = page.getByTestId('keymap').locator('kbd');
+    await expect(chords.filter({ hasText: `${modifier}+Shift+F` })).toHaveCount(1);
+    await expect(chords.filter({ hasText: `${modifier}+Enter` })).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await page.getByTestId('files/file/src%2Fdevices%2FuseDeviceRows.ts').click();
+    await page.getByTestId('code/row/new/8/gutter').click();
+    await expect(page.getByTestId('composer/fmt/bold')).toHaveAttribute('title', `Bold (${modifier}+B)`);
+    await page.getByTestId('composer/text').fill('note');
+    await page.getByTestId('composer/text').evaluate(element => {
+      if (element instanceof HTMLTextAreaElement) element.select();
+    });
+    await page.getByTestId('composer/text').press(`${key}+b`);
+    await expect(page.getByTestId('composer/text')).toHaveValue('**note**');
+  });
+}

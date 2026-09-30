@@ -37,7 +37,7 @@ export function ThreadCard({ thread, footer, children }: { thread: Thread; foote
         {rootIsAgent && <AgentBadge testid={`thread/${thread.root.id}/agentBadge`} />}
         <span className="when">{timeAgo(thread.root.createdOn)}{thread.anchor ? ` · on ${thread.anchor.anchorCommit.slice(0, 7)}` : ''}</span>
         <span className={`chip ${chip.cls}`} data-testid={`thread/${thread.root.id}/chip`}>{chip.text}</span>
-        {thread.root.resolved && <button className="expand" data-testid={`thread/${thread.root.id}/expand`} onClick={() => setOpen(o => !o)}>{collapsed ? '▸' : '▾'}</button>}</div>
+        {thread.root.resolved && <button className="expand" aria-expanded={!collapsed} aria-label={collapsed ? 'Expand resolved comment' : 'Collapse resolved comment'} data-testid={`thread/${thread.root.id}/expand`} onClick={() => setOpen(o => !o)}>{collapsed ? '▸' : '▾'}</button>}</div>
       <div className="card-body" data-testid={`thread/${thread.root.id}/body`}><Body body={thread.root.body} flavor={flavor} /></div>
       {thread.replies.map(r => {
         const replyIsAgent = local && !r.author.isMe;
@@ -46,7 +46,7 @@ export function ThreadCard({ thread, footer, children }: { thread: Thread; foote
             <div className="card-hd"><Avatar c={r} agent={replyIsAgent} /><span className="who">{r.author.isMe ? 'you' : r.author.name}</span>
               {replyIsAgent && <AgentBadge testid={`thread/${thread.root.id}/reply/${r.id}/agentBadge`} />}
               <span className="when">{timeAgo(r.createdOn)}</span></div>
-            <div className="card-body" style={{ paddingLeft: 0 }}><Body body={r.body} flavor={flavor} /></div>
+            <div className="card-body"><Body body={r.body} flavor={flavor} /></div>
           </div>
         );
       })}
@@ -57,10 +57,10 @@ export function ThreadCard({ thread, footer, children }: { thread: Thread; foote
 }
 
 export function DraftCard({ draft, footer }: { draft: Draft; footer?: React.ReactNode }) {
-  const flavor = flavorForProviderKind(usePr().data?.kind ?? 'local');
+  const kind = usePr().data?.kind ?? 'local'; const flavor = flavorForProviderKind(kind);
   return (
     <div className="card draft" data-testid={`draft/${draft.id}`}>
-      <div className="card-hd"><span className="avatar">me</span><span className="who">you</span><span className="chip blue">{draft.parentId ? 'draft reply · not published' : 'draft · not published'}</span></div>
+      <div className="card-hd"><span className="avatar">me</span><span className="who">you</span><span className="chip blue">{draft.parentId ? 'draft reply' : 'draft'} · {kind === 'local' ? 'not saved to review' : 'not published'}</span></div>
       <div className="card-body" data-testid={`draft/${draft.id}/body`}><Body body={draft.body} flavor={flavor} /></div>
       {footer && <div className="card-ft">{footer}</div>}
     </div>

@@ -8,6 +8,7 @@ export interface ComposerTarget { path: string; line: number; side: Side; endLin
 const ls = (k: string, d: string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
 
 interface S {
+  activePanel: 'files' | 'code' | 'comments'; setActivePanel: (p: 'files' | 'code' | 'comments') => void;
   currentPath: string | null; setCurrentPath: (p: string | null) => void;
   viewMode: 'diff' | 'file'; fileAt: string | null;
   range: Range | null; setRange: (r: Range | null) => void;
@@ -24,16 +25,17 @@ interface S {
   cursor: { side: Side; line: number } | null; setCursor: (c: { side: Side; line: number } | null) => void;
 }
 export const useStore = create<S>((set) => ({
+  activePanel: 'code', setActivePanel: p => set({ activePanel: p }),
   currentPath: null, setCurrentPath: p => set({ currentPath: p }),
   viewMode: 'diff', fileAt: null, jumpLine: null,
   range: null, setRange: r => set({ range: r, selection: null, composer: null }),
-  openDiff: path => set({ currentPath: path, viewMode: 'diff', jumpLine: null, context: 3, selection: null, composer: null }),
-  openFile: (path, at = null, line) => set({ currentPath: path, viewMode: 'file', fileAt: at, jumpLine: line ?? null, selection: null, composer: null }),
+  openDiff: path => set({ currentPath: path, activePanel: 'code', viewMode: 'diff', jumpLine: null, context: 3, selection: null, composer: null }),
+  openFile: (path, at = null, line) => set({ currentPath: path, activePanel: 'code', viewMode: 'file', fileAt: at, jumpLine: line ?? null, selection: null, composer: null }),
   split: ls('criever.split', '0') === '1',
   toggleSplit: () => set(s => { try { localStorage.setItem('criever.split', s.split ? '0' : '1'); } catch {} return { split: !s.split }; }),
   context: 3, setContext: n => set({ context: n }),
   overlay: null, setOverlay: o => set({ overlay: o }),
-  composer: null, setComposer: c => set({ composer: c }),
+  composer: null, setComposer: c => set(c ? { composer: c, activePanel: 'code' } : { composer: null }),
   selection: null, setSelection: sel => set({ selection: sel }),
   focusedThread: null, setFocusedThread: id => set({ focusedThread: id }),
   toast: null, showToast: m => { set({ toast: m }); setTimeout(() => set(s => (s.toast === m ? { toast: null } : {})), 2200); },

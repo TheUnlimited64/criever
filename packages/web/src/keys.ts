@@ -1,4 +1,8 @@
 export type Action = 'palette' | 'search' | 'find' | 'nextFile' | 'prevFile' | 'nextHunk' | 'prevHunk' | 'nextThread' | 'prevThread' | 'nextLine' | 'prevLine' | 'comment' | 'viewed' | 'vscode' | 'split' | 'resolve' | 'publish' | 'keys' | 'overview' | 'escape';
+export function shortcutLabel(key: string, shift = false, platform = navigator.platform): string {
+  const modifier = /^(Mac|iPhone|iPad|iPod)/.test(platform) ? 'Cmd' : 'Ctrl';
+  return `${modifier}+${shift ? 'Shift+' : ''}${key}`;
+}
 type E = { key: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean; target?: { tagName?: string } | null };
 const PLAIN: Record<string, Action> = { ']': 'nextFile', '[': 'prevFile', j: 'nextHunk', k: 'prevHunk', n: 'nextThread', p: 'prevThread', c: 'comment', v: 'viewed', '.': 'vscode', u: 'split', r: 'resolve', '?': 'keys', o: 'overview', ArrowDown: 'nextLine', ArrowUp: 'prevLine' };
 export function matchKey(e: E): Action | null {

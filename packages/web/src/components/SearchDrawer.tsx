@@ -8,12 +8,12 @@ export function SearchDrawer() {
   useEffect(() => { const t = setTimeout(() => setDq(q), 200); return () => clearTimeout(t); }, [q]);
   const hits = useSearch(dq);
   return (
-    <Overlay onClose={() => setOverlay(null)} className="palette">
+    <Overlay onClose={() => setOverlay(null)} className="palette" label="Search repository">
       <div data-testid="repoSearch">
-        <input autoFocus data-testid="repoSearch/input" placeholder={`Search in repo at ${pr?.sourceHead.slice(0, 7)} (git grep)`} value={q} onChange={e => setQ(e.target.value)} />
+        <input autoFocus aria-label="Search repository contents" data-testid="repoSearch/input" placeholder={`Search in repo at ${pr?.sourceHead.slice(0, 7)} (git grep)`} value={q} onChange={e => setQ(e.target.value)} />
         {hits.data?.slice(0, 200).map((h, i) => (
-          <div key={i} className="p-row" data-testid={`repoSearch/hit/${i}`} onClick={() => { openFile(h.path, pr?.sourceHead ?? null, h.line); setOverlay(null); }}>
-            <span>{h.path}<span className="dim">:{h.line}</span>&nbsp;&nbsp;{h.text.trim().slice(0, 120)}</span></div>))}
+          <button key={i} className="p-row" data-testid={`repoSearch/hit/${i}`} onClick={() => { openFile(h.path, pr?.sourceHead ?? null, h.line); setOverlay(null); }}>
+            <span>{h.path}<span className="dim">:{h.line}</span>&nbsp;&nbsp;{h.text.trim().slice(0, 120)}</span></button>))}
         {hits.data && hits.data.length === 0 && <div className="p-row dim">No matches</div>}
         {hits.data && hits.data.length >= 500 && <div className="p-row dim">Showing the first 500 hits</div>}
         {hits.error && <div className="p-row dim">{(hits.error as Error).message}</div>}

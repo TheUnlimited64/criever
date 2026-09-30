@@ -18,12 +18,12 @@ export function FindBar({ container, rev }: { container: React.RefObject<HTMLDiv
   useEffect(() => setI(0), [q]);
   return (
     <div className="findbar" data-testid="findBar">
-      <input autoFocus data-testid="findBar/input" placeholder="Find in file" value={q} onChange={e => setQ(e.target.value)}
+      <input autoFocus aria-label="Find text in this file" data-testid="findBar/input" placeholder="Find in file" value={q} onChange={e => setQ(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); setI(x => x + (e.shiftKey ? -1 : 1)); } if (e.key === 'Escape') setOverlay(null); }} />
       <span className="count" data-testid="findBar/count">{n ? `${((i % n) + n) % n + 1} of ${n}` : q ? 'no matches' : ''}</span>
-      <button className="btn sm ghost" data-testid="findBar/prev" onClick={() => setI(x => x - 1)}>↑</button>
-      <button className="btn sm ghost" data-testid="findBar/next" onClick={() => setI(x => x + 1)}>↓</button>
-      <button className="btn sm ghost" onClick={() => setOverlay(null)}>✕</button>
+      <button className="btn sm ghost" aria-label="Previous match" data-testid="findBar/prev" onClick={() => setI(x => x - 1)}>↑</button>
+      <button className="btn sm ghost" aria-label="Next match" data-testid="findBar/next" onClick={() => setI(x => x + 1)}>↓</button>
+      <button className="btn sm ghost" aria-label="Close find in file" onClick={() => setOverlay(null)}>×</button>
     </div>
   );
 }
