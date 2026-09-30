@@ -45,7 +45,7 @@ export function Overview() {
   };
 
   return (
-    <Overlay onClose={close} className="overview">
+    <Overlay onClose={close} className="overview" label="Review overview and commits">
       <div data-testid="overview">
         <div className="ov-hd">
           <div className="ov-titles">
@@ -69,12 +69,12 @@ export function Overview() {
           <section className="ov-sec">
             <div className="ov-label">
               Commits <span className="n">{commits.length}</span>
-              <button className={`btn sm ov-reset${range ? '' : ' on'}`} data-testid="overview/wholeReview" onClick={() => { setAnchor(null); setRange(null); }}>whole review</button>
+              <button className={`btn sm ov-reset${range ? '' : ' on'}`} aria-pressed={!range} data-testid="overview/wholeReview" onClick={() => { setAnchor(null); setRange(null); }}>whole review</button>
             </div>
             <div className="ov-commits" data-testid="overview/commits">
               {commits.map((c, i) => (
                 <button key={c.hash} className={`ov-commit${inRange(i) ? ' on' : ''}`} data-testid={`overview/commit/${short(c.hash)}`}
-                  title={`${c.message}\n\n${c.hash}`} onClick={e => pick(i, e.shiftKey)}>
+                  aria-pressed={inRange(i)} title={`${c.message}\n\n${c.hash}`} onClick={e => pick(i, e.shiftKey)}>
                   <span className="ov-dot" />
                   <span className="ov-msg">{c.message.split('\n')[0]}</span>
                   <span className="ov-hash mono">{short(c.hash)}</span>

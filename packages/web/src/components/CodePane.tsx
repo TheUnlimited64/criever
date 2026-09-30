@@ -30,24 +30,25 @@ export function CodePane({ extras = [], unanchored = null, onGutterClick = () =>
   if (!s.currentPath) return <section className="pane code" data-testid="code"><div className="empty">Pick a file</div></section>;
   const dir = s.currentPath.includes('/') ? s.currentPath.slice(0, s.currentPath.lastIndexOf('/') + 1) : '';
   return (
-    <section className={`pane code${readOnly ? ' readonly' : ''}`} data-testid="code">
+    <section className={`pane code${readOnly ? ' readonly' : ''}`} data-testid="code" aria-label="Code review">
       <div className="code-hd">
         <span className="path" data-testid="code/path"><span className="dim">{dir}</span>{s.currentPath.slice(dir.length)}</span>
         {f && <span className="stat" data-testid="code/stat"><span className="p">+{f.additions}</span> <span className="m">−{f.deletions}</span></span>}
+        {readOnly && <span className="chip grey">Read-only · older commit</span>}
         <span className="right">
           {isMd && (
             <span className="seg">
-              <button className={!preview ? 'on' : ''} data-testid="code/modeSource" onClick={() => setPreview(false)}>source</button>
-              <button className={preview ? 'on' : ''} data-testid="code/modePreview" onClick={() => setPreview(true)}>preview</button>
+              <button className={!preview ? 'on' : ''} aria-pressed={!preview} data-testid="code/modeSource" onClick={() => setPreview(false)}>Source</button>
+              <button className={preview ? 'on' : ''} aria-pressed={preview} data-testid="code/modePreview" onClick={() => setPreview(true)}>Preview</button>
             </span>
           )}
           <span className="seg">
-            <button className={s.viewMode === 'diff' && !s.split ? 'on' : ''} data-testid="code/modeUnified" onClick={() => { if (s.split) s.toggleSplit(); if (s.viewMode !== 'diff') s.openDiff(s.currentPath!); }}>unified</button>
-            <button className={s.viewMode === 'diff' && s.split ? 'on' : ''} data-testid="code/modeSplit" onClick={() => { if (!s.split) s.toggleSplit(); if (s.viewMode !== 'diff') s.openDiff(s.currentPath!); }}>split</button>
+            <button className={s.viewMode === 'diff' && !s.split ? 'on' : ''} aria-pressed={s.viewMode === 'diff' && !s.split} data-testid="code/modeUnified" onClick={() => { if (s.split) s.toggleSplit(); if (s.viewMode !== 'diff') s.openDiff(s.currentPath!); }}>Unified</button>
+            <button className={s.viewMode === 'diff' && s.split ? 'on' : ''} aria-pressed={s.viewMode === 'diff' && s.split} data-testid="code/modeSplit" onClick={() => { if (!s.split) s.toggleSplit(); if (s.viewMode !== 'diff') s.openDiff(s.currentPath!); }}>Split</button>
           </span>
-          <select className="btn sm" data-testid="code/atPicker" value={s.viewMode === 'file' ? (s.fileAt ?? pr?.sourceHead ?? '') : ''} onChange={e => e.target.value ? s.openFile(s.currentPath!, e.target.value) : s.openDiff(s.currentPath!)}>
+          <select className="btn sm" aria-label="View diff or file at a commit" data-testid="code/atPicker" value={s.viewMode === 'file' ? (s.fileAt ?? pr?.sourceHead ?? '') : ''} onChange={e => e.target.value ? s.openFile(s.currentPath!, e.target.value) : s.openDiff(s.currentPath!)}>
             <option value="">diff</option>
-            <option value={pr?.sourceHead}>file at head</option>
+            <option value={pr?.sourceHead}>File at head</option>
             {pr?.commits.map(c => <option key={c.hash} value={c.hash}>file at {c.hash.slice(0, 7)} · {c.message.slice(0, 30)}</option>)}
             <option value={pr?.mergeBase}>file at merge-base</option>
           </select>
@@ -56,11 +57,12 @@ export function CodePane({ extras = [], unanchored = null, onGutterClick = () =>
       </div>
       {s.overlay === 'find' && <FindBar container={bodyRef} rev={`${s.currentPath}|${s.viewMode}|${diff.dataUpdatedAt}|${file.dataUpdatedAt}`} />}
       <div className="code-body" ref={bodyRef} data-testid="code/body">
+        {((s.viewMode === 'diff' && diff.isPending) || (s.viewMode === 'file' && file.isPending)) && <div className="empty" role="status">Loading {s.viewMode === 'diff' ? 'changes' : 'file'}…</div>}
         {/* Kept mounted (just hidden) while previewing, not unmounted, so an open composer's
             in-progress draft survives a round trip through preview mode. */}
         <div hidden={preview}>
           {unanchored}
-          {s.viewMode === 'diff' && diff.data?.file && <DiffTable file={diff.data.file} path={s.currentPath} split={s.split} extras={extras} cursorLine={s.cursor} selection={selection} onExpand={expand}
+          {s.viewMode === 'diff' && diff.data?.file && <DiffTable file={diff.data.file} path={s.currentPath} split={s.split} extras={extras} cursorLine={s.cursor} selection={selection} readOnly={readOnly} onExpand={expand}
             onGutterClick={(side, line, shift) => { s.setCursor({ side, line }); onGutterClick(side, line, shift); }} />}
           {s.viewMode === 'diff' && diff.data && !diff.data.file && (
             <div className="empty" data-testid="code/noDiff">
@@ -70,7 +72,7 @@ export function CodePane({ extras = [], unanchored = null, onGutterClick = () =>
             </div>
           )}
           {s.viewMode === 'file' && file.data && (file.data.content == null ? <div className="empty">File does not exist at this commit.</div>
-            : <FileTable content={file.data.content} path={s.currentPath} extras={extras} cursorLine={s.cursor} selection={selection} onGutterClick={(side, line, shift) => { s.setCursor({ side, line }); onGutterClick(side, line, shift); }} />)}
+            : <FileTable content={file.data.content} path={s.currentPath} extras={extras} cursorLine={s.cursor} selection={selection} readOnly={readOnly} onGutterClick={(side, line, shift) => { s.setCursor({ side, line }); onGutterClick(side, line, shift); }} />)}
           {(diff.error || file.error) && <div className="empty" data-testid="code/error">{String((diff.error ?? file.error as Error).message)}</div>}
         </div>
         {preview && isMd && previewFile.data?.content != null && (

@@ -16,14 +16,14 @@ export function FilePalette() {
   useEffect(() => setI(0), [q]);
   const open = (r: typeof rows[number]) => { r.f ? openDiff(r.p) : openFile(r.p, pr?.sourceHead ?? null); setOverlay(null); };
   return (
-    <Overlay onClose={() => setOverlay(null)} className="palette">
+    <Overlay onClose={() => setOverlay(null)} className="palette" label="Go to file">
       <div data-testid="filePalette">
-        <input autoFocus data-testid="filePalette/input" placeholder="Jump to file… (changed files first, then whole tree)" value={q} onChange={e => setQ(e.target.value)}
+        <input autoFocus aria-label="Find a file by path" data-testid="filePalette/input" placeholder="Jump to file… (changed files first, then whole tree)" value={q} onChange={e => setQ(e.target.value)}
           onKeyDown={e => { if (e.key === 'ArrowDown') { e.preventDefault(); setI(x => Math.min(x + 1, rows.length - 1)); } if (e.key === 'ArrowUp') { e.preventDefault(); setI(x => Math.max(x - 1, 0)); } if (e.key === 'Enter' && rows[i]) open(rows[i]!); }} />
         {rows.map((r, k) => (
-          <div key={r.p} className={`p-row ${k === i ? 'on' : ''} ${r.f ? '' : 'dim'}`} data-testid={`filePalette/row/${encodeURIComponent(r.p)}`} onMouseEnter={() => setI(k)} onClick={() => open(r)}>
-            <span>{r.p}{!r.f && <span className="dim"> · not in PR</span>}</span>{r.f && <span className={`st ${r.f.status} mono`}>{r.f.status}</span>}
-          </div>))}
+          <button key={r.p} className={`p-row ${k === i ? 'on' : ''} ${r.f ? '' : 'dim'}`} data-testid={`filePalette/row/${encodeURIComponent(r.p)}`} onMouseEnter={() => setI(k)} onClick={() => open(r)}>
+            <span>{r.p}{!r.f && <span className="dim"> · {pr?.kind === 'local' ? 'unchanged' : 'not in PR'}</span>}</span>{r.f && <span className={`st ${r.f.status} mono`}>{r.f.status}</span>}
+          </button>))}
         {rows.length === 0 && <div className="p-row dim">No matches</div>}
       </div>
     </Overlay>

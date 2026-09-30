@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { Side } from '@criever/shared';
 import { api } from '../api';
-import { useComments, useInvalidate, useRangeReadOnly } from '../hooks';
+import { useComments, useInvalidate, usePr, useRangeReadOnly } from '../hooks';
 import { useStore } from '../store';
 import { CodePane } from './CodePane';
 import { Composer } from './Composer';
@@ -12,6 +12,7 @@ import { ThreadCardFull } from './ThreadCardFull';
 export function ReviewCodePane() {
   const s = useStore(); const path = s.currentPath; const c = useComments().data; const invalidate = useInvalidate();
   const readOnly = useRangeReadOnly();
+  const local = usePr().data?.kind === 'local';
   const [editing, setEditing] = useState<string | null>(null);
 
   const onGutterClick = (side: Side, line: number, shift: boolean) => {
@@ -35,10 +36,10 @@ export function ReviewCodePane() {
     }));
     const cm = s.composer && s.composer.path === path && s.composer.parentId == null ? [{
       key: 'composer', afterLine: { side: s.composer.side, line: s.composer.line },
-      node: <Composer target={s.composer} onCancel={close} onSave={async b => { await api.addDraft({ path, line: s.composer!.line, side: s.composer!.side, body: b }); close(); invalidate(); s.showToast('Saved locally. Publish sends all drafts at once.'); }} />,
+      node: <Composer target={s.composer} onCancel={close} onSave={async b => { await api.addDraft({ path, line: s.composer!.line, side: s.composer!.side, body: b }); close(); invalidate(); s.showToast(local ? 'Draft saved. Save the review to keep it as a local comment.' : 'Saved locally. Publish sends all drafts at once.'); }} />,
     }] : [];
     return [...th, ...dr, ...cm];
-  }, [c, path, s.composer, editing, invalidate]);
+  }, [c, path, s.composer, editing, invalidate, local]);
 
   // A fileDeleted thread has no line to render under (its file is gone), but its displayPath still
   // names the file it was on — this is the "obvious place" the user looks for it.

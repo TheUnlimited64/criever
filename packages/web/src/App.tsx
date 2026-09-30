@@ -41,7 +41,7 @@ function useKeyboard() {
     switch (a) {
       case 'palette': s.setOverlay('palette'); break;
       case 'search': s.setOverlay('search'); break;
-      case 'find': s.setOverlay('find'); break;
+      case 'find': s.setActivePanel('code'); s.setOverlay('find'); break;
       case 'keys': s.setOverlay('keys'); break;
       case 'overview': s.setOverlay('overview'); break;
       case 'publish': s.setOverlay('publish'); break;
