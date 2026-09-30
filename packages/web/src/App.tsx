@@ -54,7 +54,7 @@ function useKeyboard() {
       case 'comment': if (s.cursor && s.currentPath) { s.setSelection({ side: s.cursor.side, from: s.cursor.line, to: s.cursor.line }); s.setComposer({ path: s.currentPath, ...s.cursor }); } break;
       case 'viewed': { const f = files[i]; if (f) { await api.setViewed(f.path, !f.viewed); invalidate(); } break; }
       case 'split': s.toggleSplit(); break;
-      case 'resolve': { const t = c?.threads.find(x => x.root.id === s.focusedThread); if (t && !t.root.resolved) { await api.resolve(t.root.id); invalidate(); } break; }
+      case 'resolve': { const t = c?.threads.find(x => x.root.id === s.focusedThread); if (t && !t.root.resolved && t.root.canResolve !== false) { await api.resolve(t.root.id); invalidate(); } break; }
       case 'vscode': if (s.currentPath) { try { const { url } = await api.vscodeOpen(s.currentPath, s.cursor?.line ?? 1); window.open(url, 'criever-vscode'); } catch (e) { s.showToast((e as Error).message); } } break;
     }
   }), [s, files, c, invalidate, pr]);

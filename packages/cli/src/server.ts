@@ -1,6 +1,6 @@
 import { join, extname } from 'node:path';
 import type { BbComment, ChangedFile, CommentsResponse, DiffResponse, PrCommit, PrInfo, ReviewMeta, Side } from '@criever/shared';
-import type { Provider } from './provider';
+import type { Provider, PublishBody } from './provider';
 import type { Git } from './git';
 import type { LocalReviewStore } from './localreview';
 import type { StateStore } from './state';
@@ -133,7 +133,10 @@ export function createHandler(d: ServerDeps) {
         // Snapshotted before the generator removes drafts as it publishes them, so a successful
         // result can still be traced back to the local comment it was carried over from.
         const sourceLocalIds = new Map(d.store.state.drafts.map(dr => [dr.id, dr.sourceLocalId] as const));
-        const gen = publishDrafts(d.store, dr => d.provider.publishComment({ raw: dr.body, path: dr.path, line: dr.line, side: dr.side, parentId: dr.parentId }));
+        const toBody = (dr: typeof d.store.state.drafts[number]): PublishBody => ({ raw: dr.body, path: dr.path, line: dr.line, side: dr.side, parentId: dr.parentId, anchorCommit: dr.anchorCommit });
+        const publishBatch = d.provider.publishComments?.bind(d.provider);
+        const gen = publishDrafts(d.store, dr => d.provider.publishComment(toBody(dr)),
+          publishBatch ? drafts => publishBatch(drafts.map(toBody)) : undefined);
         const stream = new ReadableStream({
           async start(ctrl) {
             for await (const r of gen) {
@@ -161,7 +164,7 @@ export function createHandler(d: ServerDeps) {
       if (req.method === 'POST' && p === '/api/seen') { await d.store.setLastSeenHead(head()); return json({ ok: true }); }
       if (req.method === 'POST' && p === '/api/refresh') {
         d.meta = await d.provider.meta();
-        await d.git.fetch(d.remote, [d.meta.sourceBranch, d.meta.destinationBranch]).catch(() => {});
+        await d.git.fetch(d.remote, [d.provider.kind === 'github' ? `refs/pull/${d.meta.id}/head` : d.meta.sourceBranch, d.meta.destinationBranch]).catch(() => {});
         d.mergeBase = await d.git.mergeBase(d.meta.destinationHead, head());
         [d.comments, d.commits] = await Promise.all([d.provider.listComments(), d.provider.listCommits()]);
         return json({ ok: true });

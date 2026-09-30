@@ -1,6 +1,6 @@
 # criever
 
-criever is a local code review tool. Against a Bitbucket Cloud pull request, it runs inside your repo, finds the open PR for the checked-out branch, and serves a review UI in your browser that re-anchors existing comments when the PR moves and lets you drill into the rest of the codebase without leaving the diff — comments are drafted locally and published to Bitbucket in one batch when you're done. It also runs with no provider at all (`--local`), diffing any two git refs, which is how you hand a review back and forth with an AI agent — see "Local reviews and the agent loop" below.
+criever is a local code review tool. Against a Bitbucket Cloud or GitHub.com pull request, it runs inside your repo, finds the open PR for the checked-out branch, and serves a review UI in your browser that re-anchors existing comments when the PR moves and lets you drill into the rest of the codebase without leaving the diff — comments are drafted locally and published when you're done. It also runs with no provider at all (`--local`), diffing any two git refs, which is how you hand a review back and forth with an AI agent — see "Local reviews and the agent loop" below.
 
 ## Install
 
@@ -13,6 +13,34 @@ Requires Bun >= 1.3 and git >= 2.28.
 This runs `bun install`, `bun run build`, and symlinks `dist/criever` to `~/.local/bin/criever`. Make sure `~/.local/bin` is on your `PATH`.
 
 ## Credentials
+
+### GitHub
+
+Supply a GitHub personal access token in this order of precedence:
+
+1. `GITHUB_TOKEN`
+2. `GH_TOKEN`
+3. `github.token` in `~/.config/criever/config.json`
+
+For example:
+
+```sh
+export GITHUB_TOKEN="<github-token>"
+```
+
+or configure the file:
+
+```json
+{ "github": { "token": "<github-token>" } }
+```
+
+For a fine-grained PAT, select the repository and grant **Contents: read** and
+**Pull requests: read/write**. For a classic PAT, use **repo** for private
+repositories or **public_repo** for public repositories. Authorize the token for
+your organization's SSO as needed. criever does not implicitly use `gh auth`;
+signing into the GitHub CLI alone does not supply its credentials.
+
+### Bitbucket Cloud
 
 Supply Bitbucket credentials through environment variables:
 
@@ -38,11 +66,27 @@ cd your-repo
 criever
 ```
 
-criever resolves the Bitbucket remote as `origin` if one exists, or the single remote in the repo otherwise (it errors and names what it found if that's ambiguous). It then looks for an open PR for the currently checked-out branch and opens the review UI in your default browser.
+criever resolves the remote as `origin` if one exists, or the single remote in the repo otherwise (it errors and names what it found if that's ambiguous). Bitbucket Cloud and GitHub.com remotes are supported; GitHub accepts SSH (`git@github.com:<owner>/<repo>.git` or `ssh://git@github.com/<owner>/<repo>.git`) and HTTPS (`https://github.com/<owner>/<repo>.git`). It then looks for an open PR for the currently checked-out branch and opens the review UI in your default browser.
 
 Flags: `--port <n>` (fixed port instead of a random free one), `--no-open` (don't launch a browser), `--dev` (serve the API only, for use with `bun run dev:web` against a running Vite dev server).
 
 Or skip all of the above and review any two git refs with no provider at all — see "Local reviews and the agent loop" below.
+
+### Publishing to GitHub
+
+Create drafts in the browser, then use **Publish** to review and send them.
+GitHub root comments are published in one **COMMENT** review batch; threaded
+replies are published separately. This leaves comments rather than approving or
+requesting changes on the PR.
+
+Anchored root drafts must match the current PR head. If the head has changed
+since a draft was created, publishing rejects that stale draft: remove it and
+recreate it against the current head before publishing again. Editing only its
+text does not refresh its anchor. The publish sheet shows API failures and keeps
+unsent comments as drafts.
+
+GitHub review threads support replies and resolution. PR conversation comments are
+shown read-only, with no Reply or Resolve action, and ignore the `r` shortcut.
 
 ### Keyboard
 
@@ -106,7 +150,7 @@ The header shows `local review · <base>..<head>` instead of a PR title, and the
 
 ### Flow A — the agent reviews, you gate what goes out
 
-The agent inspects the diff and writes its findings as comments; you read them in the UI next to the diff, delete the noise, edit the wording, reply where you disagree, and publish the survivors to the real PR. The agent never talks to Bitbucket.
+The agent inspects the diff and writes its findings as comments; you read them in the UI next to the diff, delete the noise, edit the wording, reply where you disagree, and publish the survivors to the real PR. The agent never talks to Bitbucket or GitHub.
 
 ```
 $ criever --local --no-open --port 4818 &
@@ -181,7 +225,15 @@ A few lines in your agent's instructions are enough:
 
 ## Where state lives
 
-Drafts, viewed status, and re-anchored comment positions are saved per PR at `~/.local/share/criever/<workspace>/<repo>/pr-<id>.json`. Nothing is written to the git repo. If a state file is corrupt it's moved aside to `.bak`, criever starts with empty state, and the UI shows a warning banner.
+Drafts, viewed status, and re-anchored comment positions are saved per PR:
+
+- Bitbucket: `~/.local/share/criever/<workspace>/<repo>/pr-<id>.json`
+- GitHub: `~/.local/share/criever/github/<owner>/<repo>/pr-N.json`, where `N` is the PR number.
+
+`CRIEVER_STATE_DIR` overrides the state root. GitHub state is namespaced separately
+from Bitbucket state. Nothing is written to the git repo for provider reviews.
+If a state file is corrupt it's moved aside to `.bak`, criever starts with empty
+state, and the UI shows a warning banner.
 
 ## VS Code escape hatch
 
@@ -200,14 +252,15 @@ Tests: `bun run test` (per-package Vitest) and Playwright e2e in `packages/web/e
 
 | Message | What to do |
 |---|---|
-| resolved remote not bitbucket.org | The named remote's URL isn't a bitbucket.org URL. Point it at your Bitbucket Cloud repo. |
-| No git remotes / no remote named "origin" (several found) | Add one (`git remote add origin git@bitbucket.org:<workspace>/<repo>.git`) or rename the Bitbucket one to `origin` (`git remote rename <name> origin`). |
+| Unsupported remote host | Use a Bitbucket Cloud or GitHub.com remote, not a GitHub Enterprise host. |
+| No git remotes / no remote named "origin" (several found) | Add a supported remote (for example `git remote add origin git@github.com:<owner>/<repo>.git`) or rename the intended one to `origin` (`git remote rename <name> origin`). |
 | HEAD is detached | Check out the PR branch first. |
 | No open PR for `<branch>` in `<ws>/<repo>` | Push the branch and open a PR, or check out the branch that has one. |
-| 401 / 403 | Your `ATLASSIAN_API_TOKEN` / `ATLASSIAN_USER_EMAIL` are wrong or missing, or the config file at the printed path is wrong. |
+| 401 / 403 | For GitHub, check the token selected by `GITHUB_TOKEN`, `GH_TOKEN`, then config, its repository permissions/scopes, and SSO authorization. For Bitbucket, check `ATLASSIAN_API_TOKEN` / `ATLASSIAN_USER_EMAIL` or the config file at the printed path. |
 | 429 | criever waits once for the `Retry-After` period, then fails with a message if Bitbucket is still rate-limiting. |
 | git fetch failed | git's own stderr is printed verbatim; fix whatever git is complaining about (network, auth, ref). |
-| Publish partial failure | The publish sheet stays open; the failed row is red with the API's message, earlier rows already published, later rows remain drafts. Fix and retry. |
+| Publish partial failure | The publish sheet stays open; failed rows show the API's message. Successful comments are already published; failed and unsent comments remain drafts. Fix and retry. |
+| Stale GitHub root draft | Remove and recreate the anchored draft against the current PR head. Editing the text alone does not refresh its anchor. |
 | Resolve failed | The optimistic UI change is rolled back and a toast shows the error. |
 | State file corrupt | It's renamed to `.bak`, criever starts with empty state for that PR, and a warning banner explains it. |
 | VS Code download failed | A toast shows the download URL and cache path; fetch the tarball manually into that path if your network blocks GitHub releases. |

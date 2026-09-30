@@ -1,15 +1,17 @@
 import type { Anchor, BbComment, PrCommit, ReviewMeta, Side } from '@criever/shared';
 import type { BitbucketClient, RawPr } from './bitbucket';
 
-export interface PublishBody { raw: string; path: string; line: number; side: Side; parentId?: number }
+export interface PublishBody { raw: string; path: string; line: number; side: Side; parentId?: number; anchorCommit?: string }
 
 export interface Provider {
-  readonly kind: 'bitbucket' | 'local';
+  readonly kind: 'bitbucket' | 'github' | 'local';
   /** Human-facing description of where this review comes from, for the UI header. */
   meta(): Promise<ReviewMeta>;
   listComments(): Promise<BbComment[]>;
   listCommits(): Promise<PrCommit[]>;
   publishComment(b: PublishBody): Promise<number>;
+  /** Atomically publish a batch of new inline comments, returning ids in input order. */
+  publishComments?(bodies: PublishBody[]): Promise<number[]>;
   resolveComment(commentId: number): Promise<void>;
   /**
    * Anchors already known exactly (never inferred), keyed by comment id. Only a local review's

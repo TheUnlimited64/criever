@@ -10,6 +10,7 @@ export function Header() {
   const readOnly = useRangeReadOnly();
   if (!pr) return <header className="hdr" data-testid="header"><div className="workspace-bar"><strong className="brand">Criever</strong><span role="status">{review.error ? 'Review could not load' : 'Loading review workspace…'}</span></div></header>;
   const local = pr.kind === 'local';
+  const provider = pr.kind === 'github' ? 'GitHub' : 'Bitbucket';
   const newCommits = !local && pr.lastSeenHead && pr.lastSeenHead !== pr.sourceHead ? pr.commits.findIndex(c => c.hash === pr.lastSeenHead) : 0;
   const dismiss = async () => { await api.seen(); invalidate(); };
   return (
@@ -17,8 +18,8 @@ export function Header() {
       <div className="workspace-bar">
         <span className="brand"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18" /></svg>Criever</span>
         <span className="workspace-divider" aria-hidden="true">/</span>
-        {!local && <span className="repo" data-testid="header/repo" title={pr.url ?? ''}>{pr.url?.replace(/^https?:\/\/bitbucket\.org\//, '').split('/pull-requests')[0]?.replace('/', ' / ')}</span>}
-        <span className="workspace-kind">{local ? 'Local review' : 'Bitbucket review'}</span>
+        {!local && <span className="repo" data-testid="header/repo" title={pr.url ?? ''}>{pr.url?.replace(/^https?:\/\/(?:bitbucket\.org|github\.com)\//, '').split('/').slice(0, 2).join(' / ')}</span>}
+        <span className="workspace-kind">{local ? 'Local review' : `${provider} review`}</span>
         <span className="workspace-note">{local ? 'Comments stay on this machine' : 'Drafts stay private until published'}</span>
       </div>
       <div className="review-bar">
@@ -33,7 +34,7 @@ export function Header() {
         </div>
         <div className="review-actions">
           <span className="drafts" data-testid="header/draftCount">{drafts} draft{drafts === 1 ? '' : 's'}</span>
-          <button className="btn primary" data-testid="header/publishButton" disabled={drafts === 0} title={local ? 'Save drafts as local review comments' : 'Review drafts before publishing to Bitbucket'} onClick={() => setOverlay('publish')}>{local ? 'Save' : 'Publish'}</button>
+          <button className="btn primary" data-testid="header/publishButton" disabled={drafts === 0} title={local ? 'Save drafts as local review comments' : `Review drafts before publishing to ${provider}`} onClick={() => setOverlay('publish')}>{local ? 'Save' : 'Publish'}</button>
         </div>
       </div>
       <div className="comparison-bar" aria-label="Current comparison">

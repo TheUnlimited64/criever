@@ -13,6 +13,39 @@ async function store() {
 const collect = async <T>(g: AsyncGenerator<T>) => { const out: T[] = []; for await (const x of g) out.push(x); return out; };
 
 describe('publishDrafts', () => {
+  it('batches roots before publishing replies individually', async () => {
+    const { s, a, b, c } = await store();
+    const calls: string[] = [];
+    const results = await collect(publishDrafts(s, async d => { calls.push(d.body); return 103; }, async drafts => {
+      calls.push(drafts.map(d => d.body).join(','));
+      return [101, 102];
+    }));
+    expect(calls).toEqual(['one,three', 'two']);
+    expect(results.map(r => r.draftId)).toEqual([a.id, c.id, b.id]);
+    expect(s.state.drafts).toEqual([]);
+  });
+  it('publishes new inline drafts as one batch and saves returned anchors', async () => {
+    const { s, b } = await store();
+    await s.removeDraft(b.id);
+    let calls = 0;
+    const results = await collect(publishDrafts(s, async () => { throw new Error('unexpected single publish'); }, async drafts => {
+      calls++;
+      expect(drafts.map(d => d.body)).toEqual(['one', 'three']);
+      return [101, 102];
+    }));
+    expect(calls).toBe(1);
+    expect(results.map(r => r.commentId)).toEqual([101, 102]);
+    expect(s.state.drafts).toEqual([]);
+    expect(s.state.anchors[102]).toMatchObject({ side: 'old', anchorCommit: 'h' });
+  });
+  it('keeps the entire draft batch when the provider rejects it', async () => {
+    const { s, b } = await store();
+    await s.removeDraft(b.id);
+    const results = await collect(publishDrafts(s, async () => 0, async () => { throw new Error('denied'); }));
+    expect(results.map(r => r.ok)).toEqual([false, false]);
+    expect(s.state.drafts.map(d => d.body)).toEqual(['one', 'three']);
+    expect(s.state.anchors).toEqual({});
+  });
   it('publishes in order, removes drafts, records anchors', async () => {
     const { s, a, b, c } = await store(); let n = 100;
     const results = await collect(publishDrafts(s, async () => ++n));
