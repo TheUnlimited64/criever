@@ -29,6 +29,15 @@ describe('buildThreads', () => {
     if (anchor === 'c2') return { hunks: [H(10, 1, 12, 2)], newPath: null };
     return { hunks: [], newPath: null };
   };
+  it('uses original provider anchors instead of timestamps or cached guesses', async () => {
+    const anchor = { path: 'a.ts', line: 10, side: 'new', anchorCommit: 'c2', source: 'criever' } as const;
+    const { threads } = await buildThreads([
+      c({ id: 12, createdOn: '2026-09-06T00:00:00Z', inline: { path: 'a.ts', from: null, to: 99 }, anchor }),
+      c({ id: 13, parentId: 12 }),
+    ], { 12: { ...anchor, anchorCommit: 'c3', line: 99, source: 'inferred' } }, commits, hunksFor);
+    expect(threads[0]).toMatchObject({ anchor, displayLine: 12, status: { status: 'changed' } });
+    expect(threads[0]?.replies.map(r => r.id)).toEqual([13]);
+  });
   it('groups replies, keeps order, computes changed status from a stored anchor', async () => {
     const { threads, newAnchors } = await buildThreads(
       [c({ id: 1, createdOn: '2026-09-03T00:00:00Z' }), c({ id: 2, parentId: 1, createdOn: '2026-09-04T00:00:00Z' }), c({ id: 3, parentId: 1, createdOn: '2026-09-03T12:00:00Z' })],

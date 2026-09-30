@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { existsSync } from 'node:fs';
 import { BitbucketError } from './bitbucket';
+import { GitHubError } from './github';
 import { runCommentsCli } from './cli-comments';
 import { UserError } from './errors';
 import { createHandler } from './server';
@@ -25,7 +26,7 @@ function openBrowser(url: string) {
 }
 
 try {
-  if ((base || head) && !local) throw new UserError('--base/--head require --local.\nAdd --local, or drop --base/--head for a Bitbucket PR review.');
+  if ((base || head) && !local) throw new UserError('--base/--head require --local.\nAdd --local, or drop --base/--head for a PR review.');
   const deps = await startup({ cwd: process.cwd(), env: process.env, log: s => console.error(s), local, base, head });
   const staticDir = dev ? null : 'embedded';
   const vscode = createVscode({ repoRoot: deps.git.root, cacheDir: (await import('./config')).defaultPaths(process.env).cacheDir, log: s => console.error(s) });
@@ -38,6 +39,6 @@ try {
 } catch (e) {
   // Bitbucket's own errors are written for the user too — printing a stack here dumps
   // the whole minified bundle over the terminal and buries the message that names the fix.
-  if (e instanceof UserError || e instanceof BitbucketError) { console.error(e.message); process.exit(1); }
+  if (e instanceof UserError || e instanceof BitbucketError || e instanceof GitHubError) { console.error(e.message); process.exit(1); }
   throw e;
 }

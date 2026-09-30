@@ -41,11 +41,9 @@ export function ReviewCodePane() {
     return [...th, ...dr, ...cm];
   }, [c, path, s.composer, editing, invalidate, local]);
 
-  // A fileDeleted thread has no line to render under (its file is gone), but its displayPath still
-  // names the file it was on — this is the "obvious place" the user looks for it.
   const unanchored = useMemo(() => {
     if (!c || !path) return null;
-    const orphans = c.threads.filter(t => t.displayPath === path && t.status?.status === 'fileDeleted');
+    const orphans = c.threads.filter(t => t.displayPath === path && t.displayLine == null);
     if (!orphans.length) return null;
     return <div className="unanchored" data-testid="code/unanchored">{orphans.map(t => <ThreadCardFull key={t.root.id} thread={t} draftReplies={c.drafts.filter(d => d.parentId === t.root.id)} />)}</div>;
   }, [c, path]);

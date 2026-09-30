@@ -8,6 +8,7 @@ import { Overlay } from './Overlay';
 export function PublishSheet() {
   const { setOverlay, showToast } = useStore(); const drafts = useComments().data?.drafts ?? []; const pr = usePr().data; const invalidate = useInvalidate();
   const local = pr?.kind === 'local';
+  const github = pr?.kind === 'github';
   const [results, setResults] = useState<Record<string, PublishResult>>({}); const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState<Draft[] | null>(null);
   const close = () => { setOverlay(null); invalidate(); };
@@ -22,7 +23,7 @@ export function PublishSheet() {
   return (
     <Overlay onClose={close} label={local ? 'Save local review comments' : 'Publish review comments'}>
       <div data-testid="publishSheet">
-        <div className="sheet-hd">{local ? 'Save' : 'Publish'} {sorted.length} draft{sorted.length === 1 ? '' : 's'} {local ? 'to this local review' : `to PR #${pr?.id}`} <span className="sub">{local ? 'Saved on this machine, not sent to Bitbucket.' : 'As inline comments and threaded replies, in this order.'}</span></div>
+        <div className="sheet-hd">{local ? 'Save' : 'Publish'} {sorted.length} draft{sorted.length === 1 ? '' : 's'} {local ? 'to this local review' : `to PR #${pr?.id}`} <span className="sub">{local ? 'Saved on this machine, not sent to a provider.' : github ? 'Root comments in one COMMENT review batch; replies published separately.' : 'As inline comments and threaded replies, in this order.'}</span></div>
         <div className="sheet-list">
           {sorted.length === 0 && <div className="sheet-row"><div>Nothing to {local ? 'save' : 'publish'}.</div></div>}
           {sorted.map(d => { const r = results[d.id]; return (
@@ -33,7 +34,7 @@ export function PublishSheet() {
               {r?.ok && <span className="chip grey">{local ? 'saved' : 'published'}</span>}
             </div>); })}
         </div>
-        <div className="sheet-ft"><span className="grow">Anchored to {pr?.sourceHead.slice(0, 7)}. If one fails, the rest stay drafts.</span>
+        <div className="sheet-ft"><span className="grow">Anchored to {pr?.sourceHead.slice(0, 7)}. {github ? 'Recreate stale root drafts against the current head. Failed and unsent comments stay drafts.' : 'If one fails, the rest stay drafts.'}</span>
           <button className="btn" data-testid="publishSheet/cancel" onClick={close}>{Object.keys(results).length ? 'Close' : 'Cancel'}</button>
           <button className="btn primary" data-testid="publishSheet/confirm" disabled={busy || sorted.length === 0 || Object.keys(results).length > 0} onClick={publish}>{busy ? (local ? 'Saving…' : 'Publishing…') : (local ? 'Save' : 'Publish')}</button></div>
       </div>
