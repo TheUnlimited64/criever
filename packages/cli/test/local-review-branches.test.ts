@@ -34,6 +34,17 @@ beforeEach(async () => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe('local reviews across branches', () => {
+  it('saves private drafts under the configured state directory', async () => {
+    const stateDir = join(dir, 'private-state');
+    const review = await startup({
+      cwd: dir, local: true, base: 'main', log: () => {},
+      env: { CRIEVER_STATE_DIR: stateDir },
+    });
+    await review.store.addDraft({ path: 'a.ts', line: 1, side: 'new', body: 'private', anchorCommit: review.meta.sourceHead });
+    expect(review.store.file.startsWith(stateDir + '/')).toBe(true);
+    expect(JSON.parse(readFileSync(review.store.file, 'utf8')).drafts[0].body).toBe('private');
+  });
+
   it('preserves unscoped legacy comments without assigning them to this branch', async () => {
     const legacy = new LocalReviewStore(LocalReviewStore.path(dir));
     await legacy.add({ path: 'a.ts', line: 1, side: 'new', body: 'unknown branch', author: 'me', anchorCommit: await git('rev-parse', 'HEAD') });

@@ -195,7 +195,8 @@ async function startupLocal(opts: { env: Env; log: (s: string) => void; base?: s
 
   // Drafts and anchor ids belong to the same branch as the saved comments, not
   // the repo-wide synthetic PR id. Commit advances keep both files in place.
-  const store = new StateStore(join(dirname(reviewStore.file), 'state.json'));
+  const branchKey = basename(dirname(reviewStore.file));
+  const store = new StateStore(join(paths.stateDir, ws, repo, 'local', `${branchKey}.json`));
   await store.load();
   if (store.warning) opts.log(store.warning);
 

@@ -164,7 +164,7 @@ These work whether or not the UI is running — they operate directly on the che
 
 ### Where comments live
 
-`<repo>/.criever/reviews/<branch-key>/review.json` — gitignored by default, because a local review is scratch. The branch key is the SHA-256 hash of the checked-out branch name. Each branch keeps its own comments and `state.json` (drafts, anchors, and viewed marks), so switching branches does not mix reviews. Returning to a branch restores its review; advancing commits or changing the base on that branch keeps its comments. The CLI and a running criever UI read and write the same file safely: atomic `.tmp` + rename behind a serialized write queue, plus an advisory cross-process `.lock`, tested against concurrent writers.
+`<repo>/.criever/reviews/<branch-key>/review.json` — gitignored by default, because a local review is scratch. The branch key is the SHA-256 hash of the checked-out branch name. Each branch keeps its own comments, so switching branches does not mix reviews. Returning to a branch restores its review; advancing commits or changing the base on that branch keeps its comments. The CLI and a running criever UI read and write the same file safely: atomic `.tmp` + rename behind a serialized write queue, plus an advisory cross-process `.lock`, tested against concurrent writers.
 
 A running local review stays bound to the branch it opened on, even after a checkout; start a new criever instance to review the new branch. Local comments carried into a Bitbucket PR also come only from that branch's review.
 
@@ -185,7 +185,7 @@ A few lines in your agent's instructions are enough:
 
 ## Where state lives
 
-Drafts, viewed status, and re-anchored comment positions are saved per PR at `~/.local/share/criever/<workspace>/<repo>/pr-<id>.json`. Nothing is written to the git repo. If a state file is corrupt it's moved aside to `.bak`, criever starts with empty state, and the UI shows a warning banner.
+Drafts, viewed status, and re-anchored comment positions are saved per PR at `~/.local/share/criever/<workspace>/<repo>/pr-<id>.json`, or per local branch at `~/.local/share/criever/<workspace>/<repo>/local/<branch-key>.json`. `CRIEVER_STATE_DIR` overrides the root directory for both. Private state is not written to the git repo. If a state file is corrupt it's moved aside to `.bak`, criever starts with empty state, and the UI shows a warning banner.
 
 ## VS Code escape hatch
 
