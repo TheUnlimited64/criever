@@ -118,13 +118,69 @@ independent checkboxes, readable status text, and no emoji icons. Responsive pan
 selection must work at 375, 768, and 1280px. Inline comments remain anchored using the
 existing review-head contract; older commit comparisons are visibly read-only.
 
-Future extension: a daemon-level projects screen should sit above workspace context;
-entering a project should establish repository identity and branch context there.
-Branch switching and returning to Projects belong at that level, not among review
-tools. No project CRUD, daemon controls, fake navigation, or custom review-base API
-is implemented. The comparison strip can accept a future explicit base selector when
-the backend contract exists; today it displays merge-base/range and source head.
+The daemon-level projects screen sits above review context. Project navigation never
+enters review tools. The comparison strip displays merge-base/range and source head.
 
 Parent owns dependency changes, automated tests/build, and final real-browser QA.
 No additional React or Lighthouse tooling is installed in this implementation track.
 Existing timers and polling semantics outside layout are preserved, not broadened.
+
+## 9. Daemon review desk
+
+The reviewer starts with what needs attention, then chooses a repository. A compact
+summary band links to Updates since your review and Assigned to me lists. Projects
+are neutral divided rows, not oversized cards. PR rows have a strong title action,
+quiet repository/author/branch metadata, textual review status, and separate local
+tracking controls. All open PRs is the default project view; Assigned to me is an
+explicit pressed filter. Local marking is never called provider approval.
+
+Reuse .btn, .seg, .chip, .sheet and Overlay focus containment/Escape/restoration.
+New reusable patterns: desk section (label/count + divided list), PR row
+(identity, status, actions), project row (repository, local path, counts), inline
+error (message + retry), and daemon breadcrumb strip above the existing Header.
+New layout tokens: --desk-width 1120px, --space-12 48px. Existing font sizes,
+semantic light/dark colors, control sizes and radii remain the only visual scale.
+
+The desk is a scroll-body shell: navigation remains fixed; .desk-scroll owns scroll.
+Session reviews use an outer auto/minmax(0,1fr) shell; the existing .app fills its
+remaining height and retains its panel scroll ownership. At 375px rows become
+stacked details with wrapping actions; at 768px the list remains compact; at 1440px
+the centered desk has generous gutters. Paths and titles wrap anywhere; metadata
+never imposes a minimum viewport width. DOM order is the keyboard order, native
+links provide breadcrumbs, and every filter exposes aria-pressed.
+
+Workspace polling updates indicators without resetting form text or filters and
+without sorting rows by live status. Loading and failed bootstrap have retry
+surfaces; only a 404 enables standalone review. Add-project retains entered paths
+on failure. Opening a PR first asks to prepare a local checkout; only affirmative
+confirmation sends the checkout POST. Copy must not promise an untouched original
+working copy until the backend confirms that contract. Session navigation is a
+full-page load to reset review state and query caches; saved drafts remain backend
+owned. Leaving with unsaved composer text asks for confirmation.
+
+Accessibility: visible focus, named path input, alert errors, live operation feedback,
+textual status, no hover-only controls. Accepted verification debt for this worker:
+parent owns backend fixtures and real-browser checks at 375/768/1440, dialog keyboard
+interaction and session isolation. No browser or Lighthouse result is inferred.
+
+Project selection uses one editable path combobox. UI Pro Max's Autocomplete
+and Keyboard Navigation guidance applies: offer matching folders as the user
+types, without requiring Go or a separate browse mode. Arrow keys highlight,
+Enter/Tab complete a highlighted suggestion, Escape dismisses suggestions before
+closing the dialog, and pointer selection preserves input focus. Completing a
+folder adds its separator so typing can continue into subfolders. An unmodified
+Enter submits an exact typed path. Home shorthand remains supported.
+
+Suggestions come from the daemon filesystem; requests are cancellable and keyed
+by the current input so obsolete responses cannot replace current results.
+The inline suggestion list owns at most 40dvh of scroll. Rows use a folder glyph,
+name and wrapping full path; highlighted rows use --accent-soft rather than an
+accent border. Loading, no matches and access errors are separate visible states.
+Existing typography, spacing, focus, surface and radius tokens are reused.
+
+Checkout confirmation uses a labeled native radio group with two choices:
+Temporary checkout (default, system temporary directory) and Actual repository.
+The latter explicitly explains detached HEAD, clean-worktree requirements and
+that the checkout stays in place after leaving. The chosen destination is sent
+only on affirmative confirmation. Review navigation displays its destination
+and path. Radio rows wrap on mobile without hiding the explanation.

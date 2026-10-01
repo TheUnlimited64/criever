@@ -59,4 +59,27 @@ describe('publishDrafts', () => {
     expect(results).toEqual([{ draftId: a.id, ok: true, commentId: 7 }, { draftId: b.id, ok: false, error: 'boom' }]);
     expect(s.state.drafts.map(d => d.id)).toEqual([b.id, c.id]);
   });
+  it('allows a later publication after a rejected batch', async () => {
+    const { s, a, b, c } = await store();
+    await collect(publishDrafts(s, async () => 0, async () => { throw new Error('denied'); }));
+    let id = 100;
+    const results = await collect(publishDrafts(s, async () => ++id));
+    expect(results).toEqual([
+      { draftId: a.id, ok: true, commentId: 101 },
+      { draftId: b.id, ok: true, commentId: 102 },
+      { draftId: c.id, ok: true, commentId: 103 },
+    ]);
+  });
+  it('releases remaining drafts when a publication stream is closed early', async () => {
+    const { s, b, c } = await store();
+    const first = publishDrafts(s, async () => 100);
+    await first.next();
+    await first.return(undefined);
+    let id = 100;
+    const results = await collect(publishDrafts(s, async () => ++id));
+    expect(results).toEqual([
+      { draftId: b.id, ok: true, commentId: 101 },
+      { draftId: c.id, ok: true, commentId: 102 },
+    ]);
+  });
 });

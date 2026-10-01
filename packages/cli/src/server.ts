@@ -23,6 +23,28 @@ export interface ServerDeps {
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
 const err = (message: string, status: number) => json({ error: message }, status);
 
+export function serveEmbedded(assets: Record<string, string>, path: string): Response {
+  const asset = assets[path] == null ? '/index.html' : path;
+  const b64 = assets[asset];
+  if (b64 == null) return err('not found', 404);
+  return new Response(Buffer.from(b64, 'base64'), { headers: { 'content-type': Bun.file(asset).type } });
+}
+
+export async function serveStatic(staticDir: string | null, pathname: string): Promise<Response> {
+  if (!staticDir) return err('not found', 404);
+  const rel = pathname === '/' ? '/index.html' : pathname;
+  if (rel.split('/').some(part => part === '..' || part.includes('\\'))) return err('not found', 404);
+  if (staticDir === 'embedded') {
+    let WEB_ASSETS: Record<string, string>;
+    try { ({ WEB_ASSETS } = await import('./web-assets')); }
+    catch { return err('UI bundle not embedded, run `bun run build` first', 404); }
+    return serveEmbedded(WEB_ASSETS, rel);
+  }
+  let f = Bun.file(join(staticDir, rel));
+  if (!(await f.exists()) || !extname(rel)) f = Bun.file(join(staticDir, 'index.html'));
+  return new Response(f);
+}
+
 export function createHandler(d: ServerDeps) {
   const head = () => d.meta.sourceHead;
 
@@ -74,31 +96,11 @@ export function createHandler(d: ServerDeps) {
     };
   }
 
-  async function serveStatic(pathname: string): Promise<Response> {
-    if (!d.staticDir) return err('not found', 404);
-    const rel = pathname === '/' ? '/index.html' : pathname;
-    if (d.staticDir === 'embedded') {
-      // Base64 map generated at build time, simplest way to embed a whole Vite dist/ into a Bun --compile binary
-      let WEB_ASSETS: Record<string, string>;
-      try {
-        ({ WEB_ASSETS } = await import('./web-assets'));
-      } catch {
-        return err('UI bundle not embedded, run `bun run build` first', 404);
-      }
-      const b64 = WEB_ASSETS[rel] ?? WEB_ASSETS['/index.html'];
-      if (b64 == null) return err('not found', 404);
-      return new Response(Buffer.from(b64, 'base64'), { headers: { 'content-type': Bun.file(rel).type } });
-    }
-    let f = Bun.file(join(d.staticDir, rel));
-    if (!(await f.exists()) || !extname(rel)) f = Bun.file(join(d.staticDir, 'index.html'));
-    return new Response(f);
-  }
-
   return async function handler(req: Request): Promise<Response> {
     const url = new URL(req.url); const p = url.pathname; const q = url.searchParams;
     const body = async <T,>() => (await req.json()) as T;
     try {
-      if (!p.startsWith('/api/')) return serveStatic(p);
+      if (!p.startsWith('/api/')) return serveStatic(d.staticDir, p);
       if (req.method === 'GET') {
         if (p === '/api/pr') return json(await prInfo());
         if (p === '/api/files') return json(await files(q.get('base') ?? d.mergeBase, q.get('head') ?? head()));
@@ -163,10 +165,16 @@ export function createHandler(d: ServerDeps) {
       }
       if (req.method === 'POST' && p === '/api/seen') { await d.store.setLastSeenHead(head()); return json({ ok: true }); }
       if (req.method === 'POST' && p === '/api/refresh') {
-        d.meta = await d.provider.meta();
-        await d.git.fetch(d.remote, [d.provider.kind === 'github' ? `refs/pull/${d.meta.id}/head` : d.meta.sourceBranch, d.meta.destinationBranch]).catch(() => {});
-        d.mergeBase = await d.git.mergeBase(d.meta.destinationHead, head());
-        [d.comments, d.commits] = await Promise.all([d.provider.listComments(), d.provider.listCommits()]);
+        const meta = await d.provider.meta();
+        if (d.provider.kind !== 'local') {
+          await d.git.fetch(d.remote, [d.provider.kind === 'github' ? `refs/pull/${meta.id}/head` : meta.sourceHead, meta.destinationHead]);
+        }
+        const mergeBase = await d.git.mergeBase(meta.destinationHead, meta.sourceHead);
+        const [nextComments, commits] = await Promise.all([d.provider.listComments(), d.provider.listCommits()]);
+        d.meta = meta;
+        d.mergeBase = mergeBase;
+        d.comments = nextComments;
+        d.commits = commits;
         return json({ ok: true });
       }
       if (req.method === 'POST' && p === '/api/vscode/open') {

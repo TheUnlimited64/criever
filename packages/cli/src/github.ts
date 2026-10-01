@@ -2,6 +2,9 @@ import type { Anchor, BbComment, PrCommit, ReviewMeta } from '@criever/shared';
 import type { PublishBody } from './provider';
 
 export interface RawGitHubPr {
+  state?: string; draft?: boolean; updated_at?: string;
+  requested_reviewers?: { login: string }[];
+  requested_teams?: { id: number }[];
   number: number; title: string; body: string | null; html_url: string; created_at: string;
   user: { login: string } | null;
   head: { ref: string; sha: string }; base: { ref: string; sha: string };
@@ -93,6 +96,27 @@ export class GitHubClient {
   }
   async getPr(owner: string, repo: string, id: number): Promise<ReviewMeta> {
     return githubPrToMeta(await this.req<RawGitHubPr>(prPath(owner, repo, id)));
+  }
+  async listOpenPrs(owner: string, repo: string) {
+    const [prs, me] = await Promise.all([
+      this.all<RawGitHubPr>(`${prPath(owner, repo)}?state=open&per_page=100`),
+      this.req<{ login: string }>('/user'),
+    ]);
+    let teams: { id: number }[] = [];
+    if (prs.some(p => p.requested_teams?.length)) {
+      try { teams = await this.all<{ id: number }>('/user/teams?per_page=100'); }
+      catch (e) { if (!(e instanceof GitHubError) || (e.status !== 403 && e.status !== 404)) throw e; }
+    }
+    return prs.map(pr => ({
+      ...githubPrToMeta(pr), draft: pr.draft ?? false, updatedAt: pr.updated_at ?? pr.created_at,
+      assignedToMe: !!pr.requested_reviewers?.some(u => u.login.toLowerCase() === me.login.toLowerCase())
+        || !!pr.requested_teams?.some(t => teams.some(m => m.id === t.id)),
+    }));
+  }
+  async getOpenPr(owner: string, repo: string, id: number): Promise<ReviewMeta> {
+    const pr = await this.req<RawGitHubPr>(prPath(owner, repo, id));
+    if (pr.state !== 'open') throw new GitHubError(409, '', 'Pull request is no longer open.');
+    return githubPrToMeta(pr);
   }
   async listCommits(owner: string, repo: string, id: number): Promise<PrCommit[]> {
     const commits = await this.all<{ sha: string; commit: { message: string; committer: { date: string } } }>(`${prPath(owner, repo, id)}/commits?per_page=100`);
