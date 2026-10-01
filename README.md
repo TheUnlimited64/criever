@@ -61,6 +61,57 @@ Other env overrides: `BITBUCKET_API_BASE` (default `https://api.bitbucket.org/2.
 
 ## Use
 
+### Project workspace (daemon mode)
+
+Start Criever once, from any directory:
+
+```sh
+criever daemon
+# Equivalent: criever --daemon
+```
+
+The long-running process opens `http://127.0.0.1:4917`. Leave it running while
+reviewing; Ctrl+C stops it. Use `--no-open` to open the address yourself, or
+`--port <n>` to choose another port (`--port 0` picks an available port).
+It binds only to loopback, not your network interface. It runs in the foreground;
+it does not install an operating-system service.
+
+1. Choose **Add project** and enter the path to an existing local Git checkout.
+   Its GitHub.com or Bitbucket Cloud remote determines the provider. Configure
+   credentials as described above; adding a project does not clone a repository.
+2. Open a project to see its open pull requests and which request your review.
+3. Open a PR and confirm checkout. Criever prepares a separate local review
+   worktree, leaving your original checkout alone, then opens the usual diff,
+   comments, drafts, and publishing tools.
+4. Return to the project or Projects page whenever you need to switch context.
+   **Mark reviewed** records the revision you reviewed locally. It does not
+   approve the PR or publish anything to the provider.
+5. The daemon periodically checks for changes while it is running. A reviewed
+   PR whose head changes appears as updated on Projects, including force-pushed
+   revisions. Refresh checks immediately; provider errors remain visible rather
+   than silently presenting cached results as current.
+
+GitHub assignments include direct review requests and team requests when the
+token can read your team memberships. If GitHub denies that lookup, only direct
+requests are identified. Bitbucket assignments use the PR's reviewer list.
+
+Projects and reviewed revisions survive daemon restarts in
+`CRIEVER_STATE_DIR/workspace.json` (default
+`~/.local/share/criever/workspace.json`). Review drafts retain the existing
+provider/repository/PR storage. Browser review sessions belong to the running
+daemon; after restarting, reopen the PR from its project.
+
+Only one daemon can own a state directory at a time. After an unclean exit, the
+startup error identifies `workspace.lock` and its recorded process ID; remove
+that lock only after confirming the old process has exited. Clean session
+worktrees are removed at shutdown; worktrees containing edits or ignored files
+are preserved and their paths are printed.
+
+Daemon mode selects review context in the browser, so `--local`, `--base`, and
+`--head` belong to single-repository mode, not daemon mode.
+
+### Single-repository mode
+
 ```
 cd your-repo
 criever

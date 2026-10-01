@@ -1,6 +1,7 @@
 import type { BbComment, PrCommit, Side } from '@criever/shared';
 
 export interface RawPr {
+  state?: string; draft?: boolean; updated_on?: string; reviewers?: { uuid: string }[];
   id: number; title: string; created_on: string; description?: string;
   author: { display_name: string; uuid: string };
   links: { html: { href: string } };
@@ -67,6 +68,13 @@ export class BitbucketClient {
 
   getPr(ws: string, repo: string, id: number): Promise<RawPr> {
     return this.req<RawPr>(`/repositories/${ws}/${repo}/pullrequests/${id}`);
+  }
+  async listOpenPrs(ws: string, repo: string) {
+    const [prs, me] = await Promise.all([
+      this.all<RawPr>(`/repositories/${encodeURIComponent(ws)}/${encodeURIComponent(repo)}/pullrequests?state=OPEN&pagelen=100`),
+      this.myUuid(),
+    ]);
+    return prs.map(pr => ({ pr, assignedToMe: !!pr.reviewers?.some(u => u.uuid === me) }));
   }
 
   async listComments(ws: string, repo: string, id: number): Promise<BbComment[]> {
