@@ -22,6 +22,26 @@ const mk = (routes: Record<string, (init?: RequestInit) => Response>) => {
 };
 
 describe('BitbucketClient', () => {
+  it('lists all PR pages without exceeding the provider page-size limit', async () => {
+    const server = Bun.serve({
+      hostname: '127.0.0.1', port: 0,
+      fetch(req) {
+        const url = new URL(req.url);
+        if (url.pathname.endsWith('/user')) return Response.json({ uuid: '{me}' });
+        if (Number(url.searchParams.get('pagelen') ?? 10) > 50) return Response.json({ error: { message: 'Invalid pagelen' } }, { status: 400 });
+        return Response.json(url.searchParams.has('page')
+          ? { values: [{ id: 242, reviewers: [] }] }
+          : { values: [{ id: 241, reviewers: [{ uuid: '{me}' }] }], next: `${url.origin}${url.pathname}?state=OPEN&page=2` });
+      },
+    });
+    try {
+      const client = new BitbucketClient({ base: `${server.url}2.0`, email: 'e', token: 't' });
+      expect((await client.listOpenPrs('workspace', 'repo')).map(({ pr, assignedToMe }) => [pr.id, assignedToMe]))
+        .toEqual([[241, true], [242, false]]);
+    } finally {
+      await server.stop(true);
+    }
+  });
   it('sends basic auth and the q filter; picks newest PR', async () => {
     const { c, calls } = mk({ '/pullrequests?': json(fx('pr')) });
     const pr = await c.findOpenPr('sample-workspace', 'review-fixture', 'feat/virtual-list-review');

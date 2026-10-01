@@ -71,7 +71,7 @@ export class BitbucketClient {
   }
   async listOpenPrs(ws: string, repo: string) {
     const [prs, me] = await Promise.all([
-      this.all<RawPr>(`/repositories/${encodeURIComponent(ws)}/${encodeURIComponent(repo)}/pullrequests?state=OPEN&pagelen=100`),
+      this.all<RawPr>(`/repositories/${encodeURIComponent(ws)}/${encodeURIComponent(repo)}/pullrequests?state=OPEN`),
       this.myUuid(),
     ]);
     return prs.map(pr => ({ pr, assignedToMe: !!pr.reviewers?.some(u => u.uuid === me) }));
