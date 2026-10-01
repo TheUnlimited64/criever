@@ -5,6 +5,44 @@ test.beforeEach(async ({ request }) => {
   expect((await request.post('/__reset')).ok()).toBe(true);
 });
 
+test('selects a project folder without typing and preserves the path when browsing is cancelled', async ({ page, request }) => {
+  const fixture: { path: string } = await (await request.get('/__fixture')).json();
+  await page.goto('/');
+  await page.getByTestId('workspace/add-project').click();
+  await page.getByTestId('workspace/browse').click();
+  await expect(page.getByLabel('Folder location')).toBeFocused();
+  await page.getByRole('button', { name: 'Open folder review-fixture', exact: true }).click();
+  await expect(page.getByTestId('workspace/folder-current')).toHaveText(fixture.path);
+  await page.getByTestId('workspace/folder-select').click();
+  await expect(page.getByTestId('workspace/project-path')).toHaveValue(fixture.path);
+  await page.getByTestId('workspace/browse').click();
+  await page.getByRole('button', { name: 'Up', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancel browsing', exact: true }).click();
+  await expect(page.getByTestId('workspace/project-path')).toHaveValue(fixture.path);
+  await expect(page.getByTestId('workspace/project-path')).toBeFocused();
+  const added = page.waitForResponse(response => response.url().endsWith('/api/workspace/projects') && response.request().method() === 'POST');
+  await page.getByTestId('workspace/project-submit').click();
+  expect((await added).ok()).toBe(true);
+  await expect(page.getByRole('link', { name: 'review-fixture', exact: true })).toBeVisible();
+});
+
+test('supports home shorthand and recovers from missing folders in the picker', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/');
+  await page.getByTestId('workspace/add-project').click();
+  await page.getByTestId('workspace/project-path').fill('~/missing');
+  await page.getByTestId('workspace/browse').click();
+  await expect(page.getByRole('alert')).toContainText('Folder not found');
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByRole('button', { name: 'Open folder review-fixture', exact: true }).click();
+  await page.getByTestId('workspace/folder-select').click();
+  await page.getByTestId('workspace/project-path').fill('~/review-fixture');
+  const added = page.waitForResponse(response => response.url().endsWith('/api/workspace/projects') && response.request().method() === 'POST');
+  await page.getByTestId('workspace/project-submit').click();
+  expect((await added).ok()).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
 test('adds a project, filters assignments, confirms checkout and reviews in the existing workspace', async ({ page, request }) => {
   const fixture: { path: string } = await (await request.get('/__fixture')).json();
   await page.goto('/');

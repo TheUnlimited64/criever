@@ -162,3 +162,13 @@ Accessibility: visible focus, named path input, alert errors, live operation fee
 textual status, no hover-only controls. Accepted verification debt for this worker:
 parent owns backend fixtures and real-browser checks at 375/768/1440, dialog keyboard
 interaction and session isolation. No browser or Lighthouse result is inferred.
+
+Project selection supports a Browse folders control beside manual path entry.
+The browser stays inside the Add project dialog, not a second nested modal.
+It lists directories on the daemon machine using native buttons, Home and Up
+navigation, an editable location, and explicit Use this folder / Cancel actions.
+The selected path is committed to the form only on confirmation. The folder list
+owns a bounded vertical scroll (maximum 40dvh); paths wrap and actions wrap at
+375px. Loading, empty and access-error states use the existing status/alert
+patterns. Browse opens the entered path when present, otherwise the daemon home.
+Manual input and browsing both expand `~` and `~/...` against that home directory.

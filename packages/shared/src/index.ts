@@ -1,5 +1,5 @@
 export type Side = 'old' | 'new';
-export type { WorkspaceProject, WorkspacePullRequest, WorkspaceSession, WorkspaceSnapshot } from './workspace';
+export type { WorkspaceFolders, WorkspaceProject, WorkspacePullRequest, WorkspaceSession, WorkspaceSnapshot } from './workspace';
 export type FileStatus = 'A' | 'M' | 'D' | 'R';
 
 export interface DiffLine { kind: 'context' | 'add' | 'del'; oldNo: number | null; newNo: number | null; text: string }

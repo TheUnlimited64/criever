@@ -1,4 +1,4 @@
-import type { WorkspaceProject, WorkspaceSession, WorkspaceSnapshot } from '@criever/shared';
+import type { WorkspaceFolders, WorkspaceProject, WorkspaceSession, WorkspaceSnapshot } from '@criever/shared';
 import { useQuery } from '@tanstack/react-query';
 
 export class WorkspaceApiError extends Error {
@@ -21,6 +21,7 @@ const projectPath = (id: string) => `/projects/${encodeURIComponent(id)}`;
 const post = (body?: object): RequestInit => ({ method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}) });
 
 export const workspaceApi = {
+  folders: (path: string) => request<WorkspaceFolders>(`/folders?${new URLSearchParams({ path })}`),
   async snapshot(): Promise<WorkspaceSnapshot | null> {
     try { return await request<WorkspaceSnapshot>(''); }
     catch (error) { if (error instanceof WorkspaceApiError && error.status === 404) return null; throw error; }

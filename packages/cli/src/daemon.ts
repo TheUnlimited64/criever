@@ -1,4 +1,5 @@
-import { basename, resolve } from 'node:path';
+import { basename } from 'node:path';
+import { homedir } from 'node:os';
 import type { WorkspaceProject, WorkspacePullRequest } from '@criever/shared';
 import { defaultPaths, loadCredentials, loadGithubCredentials } from './config';
 import { Git } from './git';
@@ -10,6 +11,7 @@ import { serveStatic } from './server';
 import { DaemonError as ApiError, UserError } from './errors';
 import { WorkspaceStore } from './daemon-state';
 import { createSessions } from './daemon-sessions';
+import { listProjectFolders, resolveProjectPath } from './project-folders';
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
   status, headers: { 'content-type': 'application/json' },
 });
@@ -24,6 +26,7 @@ export async function createDaemon(opts: {
   log: (s: string) => void; fetch?: typeof fetch; pollIntervalMs?: number;
 }): Promise<{ fetch: (req: Request) => Promise<Response>; stop: () => Promise<void> }> {
   const paths = defaultPaths(opts.env);
+  const locations = { cwd: opts.cwd ?? process.cwd(), home: opts.env.HOME || opts.env.USERPROFILE || homedir() };
   const pollIntervalMs = opts.pollIntervalMs ?? 60_000;
   const workspace = await WorkspaceStore.open(paths.stateDir, pollIntervalMs);
   let stopped = false;
@@ -91,9 +94,9 @@ export async function createDaemon(opts: {
     const url = new URL(req.url);
     if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
       || (req.headers.has('host') && req.headers.get('host')?.toLowerCase() !== url.host.toLowerCase())) return json({ error: 'Untrusted Host' }, 403);
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)
+    if ((!['GET', 'HEAD', 'OPTIONS'].includes(req.method) || url.pathname === '/api/workspace/folders')
       && ((req.headers.has('origin') && req.headers.get('origin') !== url.origin)
-        || req.headers.get('sec-fetch-site') === 'cross-site')) return json({ error: 'Cross-origin mutation rejected' }, 403);
+        || req.headers.get('sec-fetch-site') === 'cross-site')) return json({ error: 'Cross-origin request rejected' }, 403);
     if (stopped) return json({ error: 'Daemon stopped' }, 503);
     try {
       const p = url.pathname;
@@ -110,6 +113,7 @@ export async function createDaemon(opts: {
         return s ? json({ ...s.info, sourceHead: s.deps.meta.sourceHead }) : json({ error: 'Review session expired or not found' }, 404);
       }
       if (p === '/api/workspace' && req.method === 'GET') return json(workspace.snapshot());
+      if (p === '/api/workspace/folders' && req.method === 'GET') return json(await listProjectFolders(url.searchParams.get('path') ?? '~', locations));
       if (!p.startsWith('/api/')) return serveStatic(opts.staticDir, decodeURIComponent(p));
       return await enqueue(async () => {
         if (stopped) throw new ApiError('Daemon stopped', 503);
@@ -117,7 +121,7 @@ export async function createDaemon(opts: {
         if (p === '/api/workspace/projects' && req.method === 'POST') {
           const b: unknown = await req.json();
           if (!object(b) || typeof b.path !== 'string' || !b.path.trim()) throw new ApiError('path must be a nonempty string', 400);
-          const git = await Git.open(resolve(opts.cwd ?? process.cwd(), b.path));
+          const git = await Git.open(resolveProjectPath(b.path, locations));
           const old = workspace.projects.find(p => p.path === git.root);
           if (old) return json(await refresh(old));
           const { url: remoteUrl } = await git.resolveRemote();

@@ -94,7 +94,7 @@ async function setup(provider: 'github' | 'bitbucket' = 'bitbucket', pollInterva
     return fetch(provider === 'github' ? new URL(u.pathname + u.search, stub.url) : input, init);
   }, { preconnect: fetch.preconnect });
   const opts = {
-    env: { CRIEVER_STATE_DIR: join(root, 'state'), CRIEVER_CACHE_DIR: join(root, 'cache'), BITBUCKET_API_BASE: `${stub.url}2.0`,
+    env: { HOME: root, CRIEVER_STATE_DIR: join(root, 'state'), CRIEVER_CACHE_DIR: join(root, 'cache'), BITBUCKET_API_BASE: `${stub.url}2.0`,
       ATLASSIAN_USER_EMAIL: 'me', ATLASSIAN_API_TOKEN: 'token', GITHUB_TOKEN: 'token' },
     cwd: root, staticDir: null, log: () => {}, fetch: injected, pollIntervalMs,
   };
@@ -135,6 +135,24 @@ async function setup(provider: 'github' | 'bitbucket' = 'bitbucket', pollInterva
 }
 
 describe('daemon workspace integration', () => {
+  it('serves folder navigation from the daemon home and reports invalid locations', async () => {
+    const f = await setup();
+    const response = await f.call('GET', '/api/workspace/folders');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ path: f.root, folders: expect.arrayContaining([{ name: 'repo', path: f.repo.root }]) });
+    expect((await f.call('GET', '/api/workspace/folders?path=~/missing')).status).toBe(404);
+    expect((await f.call('GET', '/api/workspace/folders', undefined, { host: 'evil.example' })).status).toBe(403);
+    expect((await f.call('GET', '/api/workspace/folders', undefined, { origin: 'http://evil.example' })).status).toBe(403);
+    expect((await f.call('GET', '/api/workspace/folders', undefined, { 'sec-fetch-site': 'cross-site' })).status).toBe(403);
+  });
+  it('adds a repository through home shorthand and deduplicates its absolute path', async () => {
+    const f = await setup();
+    const added = await f.call('POST', '/api/workspace/projects', { path: '~/repo' });
+    expect(added.status, await added.clone().text()).toBe(200);
+    const project: WorkspaceProject = await added.json();
+    expect(project.path).toBe(f.repo.root);
+    expect((await f.add()).id).toBe(project.id);
+  });
   it.each(['github', 'bitbucket'] as const)('paginates %s assignments, persists review heads and preserves failed caches', async provider => {
     const f = await setup(provider);
     const p = await f.add();

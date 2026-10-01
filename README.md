@@ -76,7 +76,10 @@ reviewing; Ctrl+C stops it. Use `--no-open` to open the address yourself, or
 It binds only to loopback, not your network interface. It runs in the foreground;
 it does not install an operating-system service.
 
-1. Choose **Add project** and enter the path to an existing local Git checkout.
+1. Choose **Add project**, then **Browse folders** to select an existing local
+   Git checkout. Home and Up navigate folders on the machine running the daemon;
+   **Use this folder** fills the project path. You can also type a path, including
+   `~` or `~/projects/repository` for the daemon user's home directory.
    Its GitHub.com or Bitbucket Cloud remote determines the provider. Configure
    credentials as described above; adding a project does not clone a repository.
 2. Open a project to see its open pull requests and which request your review.

@@ -5,6 +5,7 @@ import { App } from './App';
 import { Overlay } from './components/Overlay';
 import { projectHref, useWorkspace, workspaceApi, workspaceKey } from './workspace-api';
 import './workspace.css';
+import { FolderPicker } from './FolderPicker';
 
 const date = (iso: string | null) => {
   if (!iso) return 'Not synced yet';
@@ -63,6 +64,7 @@ export function Workspace() {
   const project = projects.find(p => p.id === projectId);
   const [addOpen, setAddOpen] = useState(false);
   const [path, setPath] = useState('');
+  const [browsing, setBrowsing] = useState(false);
   const [checkout, setCheckout] = useState<Entry | null>(null);
   const [remove, setRemove] = useState<WorkspaceProject | null>(null);
   const [filter, setFilter] = useState<'all' | 'assigned' | 'updated'>(projectId ? 'all' : 'updated');
@@ -101,7 +103,7 @@ export function Workspace() {
   const assigned = entries.filter(e => e.pr.assignedToMe);
   const updated = entries.filter(e => e.pr.status === 'updated');
   const visible = filter === 'assigned' ? assigned : filter === 'updated' ? updated : entries;
-  const closeDialog = () => { if (!busy) { setAddOpen(false); setCheckout(null); setRemove(null); setFailure(null); } };
+  const closeDialog = () => { if (!busy) { setAddOpen(false); setBrowsing(false); setCheckout(null); setRemove(null); setFailure(null); } };
   const errorSurface = failure && <WorkspaceError error={failure.error} retry={() => { void failure.retry(); }} />;
 
   if (query.data === null) return <App />;
@@ -165,10 +167,14 @@ export function Workspace() {
       <form onSubmit={e => { e.preventDefault(); void run(async () => { updateProject(await workspaceApi.add(path.trim())); setAddOpen(false); setPath(''); setNotice('Project added.'); }); }}>
         <div className="sheet-hd">Add a local project</div><div className="desk-form">
           <p>Choose a repository already on this machine. Criever will discover its provider and open pull requests.</p>
-          <label htmlFor="project-path">Local repository path</label><input id="project-path" data-testid="workspace/project-path" required value={path} onChange={e => setPath(e.target.value)} placeholder="/path/to/repository" aria-describedby="project-path-hint" />
-          <small id="project-path-hint">Use the full path to the repository directory.</small>{errorSurface}
+          {browsing ? <FolderPicker initialPath={path} onChoose={next => { setPath(next); setBrowsing(false); }} onCancel={() => setBrowsing(false)} /> : <>
+            <label htmlFor="project-path">Local repository path</label>
+            <div className="folder-location"><input id="project-path" data-testid="workspace/project-path" autoFocus required value={path} onChange={e => setPath(e.target.value)} placeholder="~/projects/repository" aria-describedby="project-path-hint" />
+              <button type="button" className="btn" data-testid="workspace/browse" disabled={busy} onClick={() => setBrowsing(true)}>Browse folders</button></div>
+            <small id="project-path-hint">Choose a folder or enter a path. ~ refers to the daemon user's home directory.</small>
+          </>}{errorSurface}
         </div>
-        <div className="sheet-ft"><span className="grow" /><button className="btn" type="button" disabled={busy} onClick={closeDialog}>Cancel</button><button className="btn primary" data-testid="workspace/project-submit" disabled={busy || !path.trim()}>{busy ? 'Adding…' : 'Add project'}</button></div>
+        {!browsing && <div className="sheet-ft"><span className="grow" /><button className="btn" type="button" disabled={busy} onClick={closeDialog}>Cancel</button><button className="btn primary" data-testid="workspace/project-submit" disabled={busy || !path.trim()}>{busy ? 'Adding…' : 'Add project'}</button></div>}
       </form>
     </Overlay>}
     {checkout && <Overlay label="Prepare a local checkout" onClose={closeDialog}>

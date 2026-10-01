@@ -48,6 +48,7 @@ const wireFetch: typeof fetch = Object.assign(async (input: Parameters<typeof fe
 
 const start = () => createDaemon({
   env: {
+    HOME: root,
     ATLASSIAN_USER_EMAIL: 'alex@example.test', ATLASSIAN_API_TOKEN: 'synthetic-token',
     BITBUCKET_API_BASE: stub.base, CRIEVER_STATE_DIR: join(root, `state-${generation}`),
     CRIEVER_CACHE_DIR: join(root, `cache-${generation}`),

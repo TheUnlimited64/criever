@@ -40,3 +40,10 @@ export interface WorkspaceSession {
   readonly title: string;
   readonly url: string;
 }
+
+export interface WorkspaceFolders {
+  readonly path: string;
+  readonly parentPath: string | null;
+  readonly homePath: string;
+  readonly folders: readonly { readonly name: string; readonly path: string }[];
+}
