@@ -2,7 +2,7 @@ import { afterEach, expect, it } from 'vitest';
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, parse } from 'node:path';
-import { listProjectFolders, resolveProjectPath } from '../src/project-folders';
+import { listProjectFolders, resolveProjectPath, suggestProjectFolders } from '../src/project-folders';
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
@@ -40,4 +40,16 @@ it('returns an actionable error for nonexistent folders and regular files', asyn
 it('disables parent navigation at the filesystem root', async () => {
   const root = parse(tmpdir()).root;
   expect((await listProjectFolders(root, { home: tmpdir(), cwd: tmpdir() })).parentPath).toBeNull();
+});
+
+it('suggests matching paths before a directory name has been completely typed', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'criever-suggestions-')); roots.push(home);
+  await mkdir(join(home, 'projects', 'Power Guard'), { recursive: true });
+  await mkdir(join(home, 'projects', 'other'));
+  const locations = { home, cwd: home };
+  expect((await suggestProjectFolders('~/pro', locations)).folders.map(folder => folder.name)).toEqual(['projects']);
+  expect((await suggestProjectFolders('~/projects/po', locations)).folders).toEqual([{ name: 'Power Guard', path: join(home, 'projects', 'Power Guard') }]);
+  expect((await suggestProjectFolders('~/projects/', locations)).folders).toHaveLength(2);
+  expect((await suggestProjectFolders('~/projects/no-match', locations)).folders).toEqual([]);
+  expect((await suggestProjectFolders('', locations)).path).toBe(home);
 });

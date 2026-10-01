@@ -1,12 +1,16 @@
 import type { BbComment, PrCommit, Side } from '@criever/shared';
+import { DaemonError } from './errors';
+
+export const fullCommitId = (id: string) => /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(id);
+type PrRevision = { branch: { name: string }; commit: { hash: string }; repository?: { full_name: string } };
 
 export interface RawPr {
   state?: string; draft?: boolean; updated_on?: string; reviewers?: { uuid: string }[];
   id: number; title: string; created_on: string; description?: string;
   author: { display_name: string; uuid: string };
   links: { html: { href: string } };
-  source: { branch: { name: string }; commit: { hash: string } };
-  destination: { branch: { name: string }; commit: { hash: string } };
+  source: PrRevision;
+  destination: PrRevision;
 }
 interface RawComment {
   id: number; created_on: string; deleted: boolean; parent?: { id: number };
@@ -23,10 +27,12 @@ const initials = (name: string) => name.split(/\s+/).map(p => p[0] ?? '').join('
 
 export class BitbucketClient {
   private auth: string; private fetchFn: typeof fetch; private base: string; private me: Promise<string> | null = null;
-  constructor(opts: { base: string; email: string; token: string; fetch?: typeof fetch }) {
+  private commitIds: Map<string, Promise<string>>;
+  constructor(opts: { base: string; email: string; token: string; fetch?: typeof fetch; commitIds?: Map<string, Promise<string>> }) {
     this.base = opts.base.replace(/\/$/, '');
     this.auth = 'Basic ' + Buffer.from(`${opts.email}:${opts.token}`).toString('base64');
     this.fetchFn = opts.fetch ?? fetch;
+    this.commitIds = opts.commitIds ?? new Map();
   }
 
   private async req<T>(url: string, init: RequestInit = {}, retried = false): Promise<T> {
@@ -68,6 +74,40 @@ export class BitbucketClient {
 
   getPr(ws: string, repo: string, id: number): Promise<RawPr> {
     return this.req<RawPr>(`/repositories/${ws}/${repo}/pullrequests/${id}`);
+  }
+  async resolveRevision(ws: string, repo: string, revision: PrRevision): Promise<string> {
+    if (typeof revision.commit.hash !== 'string') throw new DaemonError('Provider returned unsafe commit IDs', 409);
+    const id = revision.commit.hash.toLowerCase();
+    if (fullCommitId(id)) return id;
+    if (!/^[0-9a-f]{7,39}$/.test(id)) throw new DaemonError('Provider returned unsafe commit IDs', 409);
+    const repository = revision.repository?.full_name ?? `${ws}/${repo}`;
+    const parts = repository.split('/');
+    if (parts.length !== 2 || parts.some(p => !p || p === '.' || p === '..')) throw new DaemonError('Provider returned unsafe repository context', 409);
+    const key = `${repository}:${id}`;
+    let resolved = this.commitIds.get(key);
+    if (!resolved) {
+      resolved = this.req<unknown>(`/repositories/${parts.map(encodeURIComponent).join('/')}/commit/${id}`).then(commit => {
+        if (typeof commit !== 'object' || commit === null || !('hash' in commit)
+          || typeof commit.hash !== 'string' || !fullCommitId(commit.hash) || !commit.hash.toLowerCase().startsWith(id)) {
+          throw new DaemonError('Provider could not resolve an unambiguous full commit ID', 409);
+        }
+        return commit.hash.toLowerCase();
+      }).catch(e => {
+        this.commitIds.delete(key);
+        if (e instanceof BitbucketError && [400, 404, 409].includes(e.status)) {
+          throw new DaemonError('Provider could not resolve an unambiguous full commit ID', 409);
+        }
+        throw e;
+      });
+      this.commitIds.set(key, resolved);
+    }
+    return resolved;
+  }
+  async resolvePr(ws: string, repo: string, pr: RawPr): Promise<RawPr> {
+    const [source, destination] = await Promise.all([
+      this.resolveRevision(ws, repo, pr.source), this.resolveRevision(ws, repo, pr.destination),
+    ]);
+    return { ...pr, source: { ...pr.source, commit: { hash: source } }, destination: { ...pr.destination, commit: { hash: destination } } };
   }
   async listOpenPrs(ws: string, repo: string) {
     const [prs, me] = await Promise.all([

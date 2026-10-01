@@ -39,11 +39,14 @@ export interface WorkspaceSession {
   readonly sourceHead: string;
   readonly title: string;
   readonly url: string;
+  readonly checkoutTarget: 'temporary' | 'repository';
+  readonly checkoutPath: string;
 }
 
 export interface WorkspaceFolders {
   readonly path: string;
   readonly parentPath: string | null;
   readonly homePath: string;
+  readonly separator: '/' | '\\';
   readonly folders: readonly { readonly name: string; readonly path: string }[];
 }

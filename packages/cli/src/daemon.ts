@@ -4,14 +4,14 @@ import type { WorkspaceProject, WorkspacePullRequest } from '@criever/shared';
 import { defaultPaths, loadCredentials, loadGithubCredentials } from './config';
 import { Git } from './git';
 import { GitHubClient } from './github';
-import { BitbucketClient } from './bitbucket';
+import { BitbucketClient, fullCommitId } from './bitbucket';
 import { rawPrToMeta } from './provider';
 import { parseRemote, remoteProvider } from './remote';
 import { serveStatic } from './server';
 import { DaemonError as ApiError, UserError } from './errors';
 import { WorkspaceStore } from './daemon-state';
 import { createSessions } from './daemon-sessions';
-import { listProjectFolders, resolveProjectPath } from './project-folders';
+import { listProjectFolders, resolveProjectPath, suggestProjectFolders } from './project-folders';
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
   status, headers: { 'content-type': 'application/json' },
 });
@@ -46,22 +46,31 @@ export async function createDaemon(opts: {
     const existing = init?.signal ?? (input instanceof Request ? input.signal : undefined);
     return (opts.fetch ?? fetch)(input, { ...init, signal: existing ? AbortSignal.any([existing, timeout]) : timeout });
   }, { preconnect: fetch.preconnect });
+  const commitIds = new Map<string, Promise<string>>();
   async function client(p: WorkspaceProject) {
     return p.provider === 'github'
       ? new GitHubClient({ ...await loadGithubCredentials(opts.env, paths.configPath), fetch: fetchFn })
-      : new BitbucketClient({ ...await loadCredentials(opts.env, paths.configPath), base: opts.env.BITBUCKET_API_BASE ?? 'https://api.bitbucket.org/2.0', fetch: fetchFn });
+      : new BitbucketClient({ ...await loadCredentials(opts.env, paths.configPath), base: opts.env.BITBUCKET_API_BASE ?? 'https://api.bitbucket.org/2.0', fetch: fetchFn, commitIds });
   }
   async function refresh(p: WorkspaceProject): Promise<WorkspaceProject> {
     let next: WorkspaceProject;
     try {
       const c = await client(p);
+      const reviewedHeads = new Map<number, string>();
       const rows = c instanceof GitHubClient ? await c.listOpenPrs(p.owner, p.repo)
-        : (await c.listOpenPrs(p.owner, p.repo)).map(({ pr, assignedToMe }) => ({
-          ...rawPrToMeta(pr), assignedToMe, draft: pr.draft ?? false, updatedAt: pr.updated_on ?? pr.created_on,
+        : await Promise.all((await c.listOpenPrs(p.owner, p.repo)).map(async ({ pr, assignedToMe }) => {
+          const old = p.pullRequests.find(row => row.id === pr.id);
+          if (old?.reviewedHead != null) {
+            reviewedHeads.set(pr.id, await c.resolveRevision(p.owner, p.repo, { ...pr.source, commit: { hash: old.reviewedHead } }));
+          }
+          // Unreviewed rows need no commit-detail calls during polling.
+          const sourceHead = old?.reviewedHead == null ? pr.source.commit.hash
+            : await c.resolveRevision(p.owner, p.repo, pr.source);
+          return { ...rawPrToMeta(pr), sourceHead, assignedToMe, draft: pr.draft ?? false, updatedAt: pr.updated_on ?? pr.created_on };
         }));
       next = { ...p, error: null, refreshedAt: new Date().toISOString(), pullRequests: rows.map(row => {
         const old = p.pullRequests.find(pr => pr.id === row.id);
-        const reviewedHead = old?.reviewedHead ?? null;
+        const reviewedHead = reviewedHeads.get(row.id) ?? old?.reviewedHead ?? null;
         return { ...row, url: row.url ?? '', reviewedHead, reviewedAt: old?.reviewedAt ?? null, status: status(row.sourceHead, reviewedHead) };
       }) };
     } catch (e) {
@@ -113,7 +122,10 @@ export async function createDaemon(opts: {
         return s ? json({ ...s.info, sourceHead: s.deps.meta.sourceHead }) : json({ error: 'Review session expired or not found' }, 404);
       }
       if (p === '/api/workspace' && req.method === 'GET') return json(workspace.snapshot());
-      if (p === '/api/workspace/folders' && req.method === 'GET') return json(await listProjectFolders(url.searchParams.get('path') ?? '~', locations));
+      if (p === '/api/workspace/folders' && req.method === 'GET') {
+        const folders = url.searchParams.get('autocomplete') === 'true' ? suggestProjectFolders : listProjectFolders;
+        return json(await folders(url.searchParams.get('path') ?? '~', locations));
+      }
       if (!p.startsWith('/api/')) return serveStatic(opts.staticDir, decodeURIComponent(p));
       return await enqueue(async () => {
         if (stopped) throw new ApiError('Daemon stopped', 503);
@@ -143,17 +155,26 @@ export async function createDaemon(opts: {
         const b: unknown = await req.json();
         if (!object(b)) throw new ApiError('JSON object required', 400);
         const prId = Number(route[3]);
-        if (route[4] === 'checkout') return json(await checkout(project, prId, b.confirmed));
+        if (route[4] === 'checkout') return json(await checkout(project, prId, b.confirmed, b.target));
         if (route[4] === 'reviewed') {
           if (!nullableString(b.sourceHead) || b.sourceHead === undefined) throw new ApiError('sourceHead must be a string or null', 400);
           const pr = project.pullRequests.find(pr => pr.id === prId);
           if (!pr) throw new ApiError('Pull request not found', 404);
-          const reviewedHead = b.sourceHead;
-          if (reviewedHead !== null && reviewedHead !== pr.sourceHead
+          let reviewedHead = b.sourceHead;
+          let sourceHead = pr.sourceHead;
+          if (reviewedHead !== null && project.provider === 'bitbucket') {
+            const c = await client(project);
+            if (c instanceof BitbucketClient) {
+              const raw = await c.getPr(project.owner, project.repo, prId);
+              sourceHead = await c.resolveRevision(project.owner, project.repo, { ...raw.source, commit: { hash: pr.sourceHead } });
+              if (reviewedHead === pr.sourceHead) reviewedHead = sourceHead;
+            }
+          }
+          if (reviewedHead !== null && (!fullCommitId(reviewedHead) || (reviewedHead !== sourceHead
             && ![...sessions.values()].some(s => s.info.projectId === project.id && s.info.prId === prId
-              && (s.info.sourceHead === reviewedHead || s.deps.meta.sourceHead === reviewedHead))) throw new ApiError('Unknown review revision', 409);
+              && (s.info.sourceHead === reviewedHead || s.deps.meta.sourceHead === reviewedHead))))) throw new ApiError('Unknown review revision', 409);
           const next: WorkspaceProject = { ...project, pullRequests: project.pullRequests.map(row => row.id === prId
-            ? { ...row, reviewedHead, reviewedAt: reviewedHead === null ? null : new Date().toISOString(), status: status(row.sourceHead, reviewedHead) } : row) };
+            ? { ...row, sourceHead, reviewedHead, reviewedAt: reviewedHead === null ? null : new Date().toISOString(), status: status(sourceHead, reviewedHead) } : row) };
           workspace.projects = workspace.projects.map(row => row.id === project.id ? next : row);
           await workspace.save();
           return json(next);

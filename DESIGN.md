@@ -163,12 +163,24 @@ textual status, no hover-only controls. Accepted verification debt for this work
 parent owns backend fixtures and real-browser checks at 375/768/1440, dialog keyboard
 interaction and session isolation. No browser or Lighthouse result is inferred.
 
-Project selection supports a Browse folders control beside manual path entry.
-The browser stays inside the Add project dialog, not a second nested modal.
-It lists directories on the daemon machine using native buttons, Home and Up
-navigation, an editable location, and explicit Use this folder / Cancel actions.
-The selected path is committed to the form only on confirmation. The folder list
-owns a bounded vertical scroll (maximum 40dvh); paths wrap and actions wrap at
-375px. Loading, empty and access-error states use the existing status/alert
-patterns. Browse opens the entered path when present, otherwise the daemon home.
-Manual input and browsing both expand `~` and `~/...` against that home directory.
+Project selection uses one editable path combobox. UI Pro Max's Autocomplete
+and Keyboard Navigation guidance applies: offer matching folders as the user
+types, without requiring Go or a separate browse mode. Arrow keys highlight,
+Enter/Tab complete a highlighted suggestion, Escape dismisses suggestions before
+closing the dialog, and pointer selection preserves input focus. Completing a
+folder adds its separator so typing can continue into subfolders. An unmodified
+Enter submits an exact typed path. Home shorthand remains supported.
+
+Suggestions come from the daemon filesystem; requests are cancellable and keyed
+by the current input so obsolete responses cannot replace current results.
+The inline suggestion list owns at most 40dvh of scroll. Rows use a folder glyph,
+name and wrapping full path; highlighted rows use --accent-soft rather than an
+accent border. Loading, no matches and access errors are separate visible states.
+Existing typography, spacing, focus, surface and radius tokens are reused.
+
+Checkout confirmation uses a labeled native radio group with two choices:
+Temporary checkout (default, system temporary directory) and Actual repository.
+The latter explicitly explains detached HEAD, clean-worktree requirements and
+that the checkout stays in place after leaving. The chosen destination is sent
+only on affirmative confirmation. Review navigation displays its destination
+and path. Radio rows wrap on mobile without hiding the explanation.

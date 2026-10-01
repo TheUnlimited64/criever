@@ -76,16 +76,21 @@ reviewing; Ctrl+C stops it. Use `--no-open` to open the address yourself, or
 It binds only to loopback, not your network interface. It runs in the foreground;
 it does not install an operating-system service.
 
-1. Choose **Add project**, then **Browse folders** to select an existing local
-   Git checkout. Home and Up navigate folders on the machine running the daemon;
-   **Use this folder** fills the project path. You can also type a path, including
-   `~` or `~/projects/repository` for the daemon user's home directory.
+1. Choose **Add project** and start typing the repository path. Matching folders
+   on the daemon machine appear as you type, including for incomplete names such
+   as `~/pro`. Click a suggestion, or use arrow keys and Enter/Tab to complete it;
+   keep typing to navigate into subfolders. Escape dismisses suggestions without
+   closing the dialog. You can also enter an exact path directly, including `~`
+   or `~/projects/repository` for the daemon user's home directory.
    Its GitHub.com or Bitbucket Cloud remote determines the provider. Configure
    credentials as described above; adding a project does not clone a repository.
 2. Open a project to see its open pull requests and which request your review.
-3. Open a PR and confirm checkout. Criever prepares a separate local review
-   worktree, leaving your original checkout alone, then opens the usual diff,
-   comments, drafts, and publishing tools.
+3. Open a PR, choose **Temporary checkout** or **Actual repository**, and confirm.
+   Temporary checkout is the default: an isolated worktree in the system temporary
+   directory (`/tmp` on Linux), leaving your original checkout alone. Actual
+   repository switches your local checkout to the PR commit in detached HEAD;
+   it requires a clean working tree and stays checked out when you leave.
+   Both modes open the usual diff, comments, drafts, and publishing tools.
 4. Return to the project or Projects page whenever you need to switch context.
    **Mark reviewed** records the revision you reviewed locally. It does not
    approve the PR or publish anything to the provider.
@@ -106,9 +111,10 @@ daemon; after restarting, reopen the PR from its project.
 
 Only one daemon can own a state directory at a time. After an unclean exit, the
 startup error identifies `workspace.lock` and its recorded process ID; remove
-that lock only after confirming the old process has exited. Clean session
+that lock only after confirming the old process has exited. Clean temporary
 worktrees are removed at shutdown; worktrees containing edits or ignored files
-are preserved and their paths are printed.
+are preserved and their paths are printed. Actual repository checkouts are never
+removed or automatically restored by daemon shutdown.
 
 Daemon mode selects review context in the browser, so `--local`, `--base`, and
 `--head` belong to single-repository mode, not daemon mode.

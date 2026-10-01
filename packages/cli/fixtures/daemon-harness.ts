@@ -4,12 +4,14 @@ import { join } from 'node:path';
 import { createDaemon } from '../src/daemon';
 import { buildFixtureRepo } from './repo';
 import { startStubBitbucket } from './stub-bitbucket';
+import { Git } from '../src/git';
 
 const args = process.argv.slice(2);
 const portIndex = args.indexOf('--port');
 const port = Number(portIndex < 0 ? 4803 : args[portIndex + 1]);
 const root = await mkdtemp(join(tmpdir(), 'criever-daemon-e2e-'));
 const repo = await buildFixtureRepo(join(root, 'review-fixture'));
+const git = new Git(repo.root);
 const stub = startStubBitbucket({
   main: repo.main, c2: repo.c2, c3: repo.c3,
   commits: [
@@ -22,19 +24,27 @@ let revision = repo.c2;
 let unavailable = false;
 let generation = 0;
 let checkoutCount = 0;
+let abbreviated = false;
+const reportedHash = (hash: string) => abbreviated ? hash.slice(0, 12) : hash;
 const wireFetch: typeof fetch = Object.assign(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
   const url = new URL(input instanceof Request ? input.url : String(input));
   if (unavailable) return Response.json({ error: { message: 'Provider temporarily unavailable' } }, { status: 503 });
+  const commit = /\/commit\/([0-9a-f]+)$/.exec(url.pathname);
+  if (commit) {
+    const hashes = [repo.main, repo.c1, repo.c2, repo.c3].filter(hash => hash.startsWith(commit[1] ?? ''));
+    return hashes.length === 1 ? Response.json({ hash: hashes[0] }) : Response.json({ error: 'Unknown or ambiguous commit' }, { status: 400 });
+  }
   if (url.pathname.endsWith('/pullrequests') || /\/pullrequests\/24[12]$/.test(url.pathname)) {
     const original = await fetch(`${stub.base}/repositories/sample-workspace/review-fixture/pullrequests/241`, init);
     const raw = await original.json();
     const pr = {
       ...raw, state: 'OPEN', draft: false, updated_on: revision === repo.c2 ? '2026-09-02T08:00:00Z' : '2026-09-05T08:00:00Z',
-      source: { ...raw.source, commit: { hash: revision } },
+      source: { ...raw.source, commit: { hash: reportedHash(revision) } },
+      destination: { ...raw.destination, commit: { hash: reportedHash(repo.main) } },
       reviewers: [{ display_name: 'Alex Morgan', uuid: '{me}' }],
       participants: [{ user: { display_name: 'Alex Morgan', uuid: '{me}' }, role: 'REVIEWER', approved: false }],
     };
-    const other = { ...pr, id: 242, title: 'Keep catalog filters in the URL', reviewers: [], participants: [], source: { ...pr.source, commit: { hash: repo.c1 } } };
+    const other = { ...pr, id: 242, title: 'Keep catalog filters in the URL', reviewers: [], participants: [], source: { ...pr.source, commit: { hash: reportedHash(repo.c1) } } };
     return Response.json(url.pathname.endsWith('/pullrequests') ? { values: [pr, other] } : url.pathname.endsWith('/242') ? other : pr);
   }
   if (url.pathname.endsWith('/pullrequests/241/commits') && revision === repo.c2) {
@@ -61,12 +71,14 @@ const server = Bun.serve({
   hostname: '127.0.0.1', port,
   async fetch(req) {
     const path = new URL(req.url).pathname;
-    if (path === '/__fixture') return Response.json({ path: repo.root, originalHead: repo.c3, firstHead: repo.c2, updatedHead: repo.c3, checkoutCount });
+    if (path === '/__fixture') return Response.json({ path: repo.root, currentHead: (await git.run(['rev-parse', 'HEAD'])).stdout.trim(), originalHead: repo.c3, firstHead: repo.c2, updatedHead: repo.c3, checkoutCount });
     if (path === '/__advance' && req.method === 'POST') { revision = repo.c3; return Response.json({ ok: true }); }
+    if (path === '/__short' && req.method === 'POST') { abbreviated = true; return Response.json({ ok: true }); }
     if (path === '/__fail' && req.method === 'POST') { unavailable = true; return Response.json({ ok: true }); }
     if (path === '/__reset' && req.method === 'POST') {
       await daemon.stop();
-      generation += 1; revision = repo.c2; unavailable = false; checkoutCount = 0; stub.reset();
+      await git.run(['checkout', '--detach', repo.c3]);
+      generation += 1; revision = repo.c2; unavailable = false; checkoutCount = 0; abbreviated = false; stub.reset();
       daemon = await start();
       return Response.json({ ok: true });
     }

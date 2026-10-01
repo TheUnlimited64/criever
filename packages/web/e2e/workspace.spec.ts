@@ -1,47 +1,116 @@
 import { expect, test } from '@playwright/test';
-import type { WorkspaceProject, WorkspaceSnapshot } from '@criever/shared';
+import type { WorkspaceProject, WorkspaceSession, WorkspaceSnapshot } from '@criever/shared';
 
 test.beforeEach(async ({ request }) => {
   expect((await request.post('/__reset')).ok()).toBe(true);
 });
 
-test('selects a project folder without typing and preserves the path when browsing is cancelled', async ({ page, request }) => {
+test('completes partial folder paths with keyboard and pointer selection', async ({ page, request }) => {
   const fixture: { path: string } = await (await request.get('/__fixture')).json();
   await page.goto('/');
   await page.getByTestId('workspace/add-project').click();
-  await page.getByTestId('workspace/browse').click();
-  await expect(page.getByLabel('Folder location')).toBeFocused();
-  await page.getByRole('button', { name: 'Open folder review-fixture', exact: true }).click();
-  await expect(page.getByTestId('workspace/folder-current')).toHaveText(fixture.path);
-  await page.getByTestId('workspace/folder-select').click();
-  await expect(page.getByTestId('workspace/project-path')).toHaveValue(fixture.path);
-  await page.getByTestId('workspace/browse').click();
-  await page.getByRole('button', { name: 'Up', exact: true }).click();
-  await page.getByRole('button', { name: 'Cancel browsing', exact: true }).click();
-  await expect(page.getByTestId('workspace/project-path')).toHaveValue(fixture.path);
-  await expect(page.getByTestId('workspace/project-path')).toBeFocused();
+  const input = page.getByRole('combobox', { name: 'Local repository path' });
+  await input.fill('~/rev');
+  await expect(page.getByRole('option', { name: /review-fixture/ })).toBeVisible();
+  await input.press('ArrowDown');
+  await input.press('Enter');
+  await expect(input).toHaveValue(`${fixture.path}/`);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await input.fill(`${fixture.path}/s`);
+  await page.getByRole('option', { name: /^src/ }).click();
+  await expect(input).toHaveValue(`${fixture.path}/src/`);
+  await expect(input).toBeFocused();
+  await input.fill('~/rev');
+  await expect(page.getByRole('option', { name: /review-fixture/ })).toBeVisible();
+  await input.press('ArrowDown');
+  await input.press('Tab');
+  await expect(input).toHaveValue(`${fixture.path}/`);
   const added = page.waitForResponse(response => response.url().endsWith('/api/workspace/projects') && response.request().method() === 'POST');
   await page.getByTestId('workspace/project-submit').click();
   expect((await added).ok()).toBe(true);
   await expect(page.getByRole('link', { name: 'review-fixture', exact: true })).toBeVisible();
 });
 
-test('supports home shorthand and recovers from missing folders in the picker', async ({ page }) => {
+test('recovers from missing folders and dismisses suggestions without closing the dialog', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto('/');
   await page.getByTestId('workspace/add-project').click();
-  await page.getByTestId('workspace/project-path').fill('~/missing');
-  await page.getByTestId('workspace/browse').click();
+  const input = page.getByRole('combobox', { name: 'Local repository path' });
+  await input.fill('~/missing/');
   await expect(page.getByRole('alert')).toContainText('Folder not found');
-  await page.getByRole('button', { name: 'Home', exact: true }).click();
-  await page.getByRole('button', { name: 'Open folder review-fixture', exact: true }).click();
-  await page.getByTestId('workspace/folder-select').click();
-  await page.getByTestId('workspace/project-path').fill('~/review-fixture');
+  await input.fill('~/rev');
+  await expect(page.getByRole('option', { name: /review-fixture/ })).toBeVisible();
+  await input.press('Escape');
+  await expect(page.getByRole('listbox')).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await input.fill('~/review-fixture');
   const added = page.waitForResponse(response => response.url().endsWith('/api/workspace/projects') && response.request().method() === 'POST');
   await page.getByTestId('workspace/project-submit').click();
   expect((await added).ok()).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test('keeps current suggestions when an older directory response arrives late', async ({ page }) => {
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const finished = Promise.withResolvers<void>();
+  await page.route('**/api/workspace/folders?*', async route => {
+    if (new URL(route.request().url()).searchParams.get('path') !== '~/s') return route.continue();
+    const response = await route.fetch();
+    started.resolve();
+    await release.promise;
+    await route.fulfill({ response });
+    finished.resolve();
+  });
+  try {
+    await page.goto('/');
+    await page.getByTestId('workspace/add-project').click();
+    const input = page.getByRole('combobox', { name: 'Local repository path' });
+    await input.fill('~/s');
+    await started.promise;
+    await input.fill('~/rev');
+    await expect(page.getByRole('option', { name: /review-fixture/ })).toBeVisible();
+    release.resolve();
+    await finished.promise;
+    await expect(page.getByRole('option', { name: /^state-/ })).toHaveCount(0);
+    await expect(input).toHaveValue('~/rev');
+  } finally {
+    release.resolve();
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
+for (const target of ['temporary', 'repository'] as const) {
+  test(`checks out into the selected ${target} destination`, async ({ page, request }) => {
+    const fixture: { path: string; originalHead: string; firstHead: string } = await (await request.get('/__fixture')).json();
+    await request.post('/__short');
+    const project: WorkspaceProject = await (await request.post('/api/workspace/projects', { data: { path: fixture.path } })).json();
+    await page.goto(`/projects/${project.id}`);
+    await page.getByTestId('pr/241/open').click();
+    await expect(page.getByRole('radio', { name: /Temporary checkout/ })).toBeChecked();
+    if (target === 'repository') await page.getByRole('radio', { name: /Actual repository/ }).check();
+    const prepared = page.waitForResponse(response => response.url().endsWith('/prs/241/checkout') && response.request().method() === 'POST');
+    await page.getByTestId('workspace/checkout-confirm').click();
+    const response = await prepared;
+    expect(response.status()).toBe(200);
+    await expect(page).toHaveURL(/\/review\/[^/]+\//);
+    const id = new URL(page.url()).pathname.split('/')[2];
+    const session: WorkspaceSession = await (await request.get(`/api/workspace/sessions/${id}`)).json();
+    expect(session.checkoutTarget).toBe(target);
+    expect(session.sourceHead).toBe(fixture.firstHead);
+    if (target === 'repository') expect(session.checkoutPath).toBe(fixture.path);
+    else expect(session.checkoutPath).not.toBe(fixture.path);
+    await expect(page.getByTestId('workspace/session-location')).toContainText(session.checkoutPath);
+    const current: { currentHead: string } = await (await request.get('/__fixture')).json();
+    expect(current.currentHead).toBe(target === 'repository' ? fixture.firstHead : fixture.originalHead);
+    const marked = page.waitForResponse(response => response.url().endsWith('/prs/241/reviewed') && response.request().method() === 'POST');
+    await page.getByTestId('workspace/session-reviewed').click();
+    expect((await marked).ok()).toBe(true);
+    await request.post(`/api/workspace/projects/${project.id}/refresh`);
+    const snapshot: WorkspaceSnapshot = await (await request.get('/api/workspace')).json();
+    expect(snapshot.projects[0]?.pullRequests.find(pr => pr.id === 241)?.status).toBe('reviewed');
+  });
+}
 
 test('adds a project, filters assignments, confirms checkout and reviews in the existing workspace', async ({ page, request }) => {
   const fixture: { path: string } = await (await request.get('/__fixture')).json();

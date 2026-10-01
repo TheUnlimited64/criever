@@ -53,6 +53,10 @@ function SessionContents({ session }: { readonly session: WorkspaceSession }) {
         </div>
       </nav>
       <div className="session-message" role="status">{notice || `Review markers are local only · source ${sourceHead.slice(0, 7)}`}</div>
+      <div className="session-message session-location" data-testid="workspace/session-location">
+        <span>{session.checkoutTarget === 'temporary' ? 'Temporary checkout' : 'Actual repository'}</span>
+        <code>{session.checkoutPath}</code>
+      </div>
       {error && <WorkspaceError error={error.error} retry={() => { void mark(error.head); }} />}
       {prQuery.error && <WorkspaceError error={prQuery.error} retry={() => { void prQuery.refetch(); }} />}
       {workspace.error && <WorkspaceError error={workspace.error} retry={() => { void workspace.refetch(); }} />}

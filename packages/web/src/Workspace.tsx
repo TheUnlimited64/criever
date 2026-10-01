@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { WorkspaceProject, WorkspacePullRequest } from '@criever/shared';
+import type { WorkspaceProject, WorkspacePullRequest, WorkspaceSession } from '@criever/shared';
 import { App } from './App';
 import { Overlay } from './components/Overlay';
 import { projectHref, useWorkspace, workspaceApi, workspaceKey } from './workspace-api';
 import './workspace.css';
-import { FolderPicker } from './FolderPicker';
+import { PathAutocomplete } from './PathAutocomplete';
 
 const date = (iso: string | null) => {
   if (!iso) return 'Not synced yet';
@@ -64,8 +64,8 @@ export function Workspace() {
   const project = projects.find(p => p.id === projectId);
   const [addOpen, setAddOpen] = useState(false);
   const [path, setPath] = useState('');
-  const [browsing, setBrowsing] = useState(false);
   const [checkout, setCheckout] = useState<Entry | null>(null);
+  const [checkoutTarget, setCheckoutTarget] = useState<WorkspaceSession['checkoutTarget']>('temporary');
   const [remove, setRemove] = useState<WorkspaceProject | null>(null);
   const [filter, setFilter] = useState<'all' | 'assigned' | 'updated'>(projectId ? 'all' : 'updated');
   const [busy, setBusy] = useState(false);
@@ -103,7 +103,7 @@ export function Workspace() {
   const assigned = entries.filter(e => e.pr.assignedToMe);
   const updated = entries.filter(e => e.pr.status === 'updated');
   const visible = filter === 'assigned' ? assigned : filter === 'updated' ? updated : entries;
-  const closeDialog = () => { if (!busy) { setAddOpen(false); setBrowsing(false); setCheckout(null); setRemove(null); setFailure(null); } };
+  const closeDialog = () => { if (!busy) { setAddOpen(false); setCheckout(null); setRemove(null); setFailure(null); } };
   const errorSurface = failure && <WorkspaceError error={failure.error} retry={() => { void failure.retry(); }} />;
 
   if (query.data === null) return <App />;
@@ -156,7 +156,7 @@ export function Workspace() {
                 <button className={filter === 'updated' ? 'on' : ''} aria-pressed={filter === 'updated'} data-testid="workspace/filter/updated" onClick={() => setFilter('updated')}>Updated</button>
               </div>
             </div>
-            <PrList entries={visible} busy={busy} open={entry => { setFailure(null); setCheckout(entry); }} mark={mark}
+            <PrList entries={visible} busy={busy} open={entry => { setFailure(null); setCheckoutTarget('temporary'); setCheckout(entry); }} mark={mark}
               empty={filter === 'updated' ? 'You are caught up. No new commits since your local reviews.' : filter === 'assigned' ? 'No open pull requests are assigned to you.' : 'No open pull requests in this project yet.'} />
           </section>
           <p className="desk-footnote">Review markers stay on this machine. They do not approve or change pull requests on your provider.</p>
@@ -167,23 +167,29 @@ export function Workspace() {
       <form onSubmit={e => { e.preventDefault(); void run(async () => { updateProject(await workspaceApi.add(path.trim())); setAddOpen(false); setPath(''); setNotice('Project added.'); }); }}>
         <div className="sheet-hd">Add a local project</div><div className="desk-form">
           <p>Choose a repository already on this machine. Criever will discover its provider and open pull requests.</p>
-          {browsing ? <FolderPicker initialPath={path} onChoose={next => { setPath(next); setBrowsing(false); }} onCancel={() => setBrowsing(false)} /> : <>
-            <label htmlFor="project-path">Local repository path</label>
-            <div className="folder-location"><input id="project-path" data-testid="workspace/project-path" autoFocus required value={path} onChange={e => setPath(e.target.value)} placeholder="~/projects/repository" aria-describedby="project-path-hint" />
-              <button type="button" className="btn" data-testid="workspace/browse" disabled={busy} onClick={() => setBrowsing(true)}>Browse folders</button></div>
-            <small id="project-path-hint">Choose a folder or enter a path. ~ refers to the daemon user's home directory.</small>
-          </>}{errorSurface}
+          <PathAutocomplete value={path} onChange={setPath} disabled={busy} />{errorSurface}
         </div>
-        {!browsing && <div className="sheet-ft"><span className="grow" /><button className="btn" type="button" disabled={busy} onClick={closeDialog}>Cancel</button><button className="btn primary" data-testid="workspace/project-submit" disabled={busy || !path.trim()}>{busy ? 'Adding…' : 'Add project'}</button></div>}
+        <div className="sheet-ft"><span className="grow" /><button className="btn" type="button" disabled={busy} onClick={closeDialog}>Cancel</button><button className="btn primary" data-testid="workspace/project-submit" disabled={busy || !path.trim()}>{busy ? 'Adding…' : 'Add project'}</button></div>
       </form>
     </Overlay>}
     {checkout && <Overlay label="Prepare a local checkout" onClose={closeDialog}>
       <div className="sheet-hd">Prepare a local checkout?</div><div className="desk-form">
         <strong>#{checkout.pr.id} · {checkout.pr.title}</strong><p>Criever needs to prepare a local checkout of this pull request before you can review its files.</p>
         <code className="desk-path">{checkout.project.path}</code><p className="desk-meta">Branch {checkout.pr.sourceBranch} · head {checkout.pr.sourceHead.slice(0, 7)}</p>{errorSurface}
+        <fieldset className="checkout-options" disabled={busy}>
+          <legend>Checkout location</legend>
+          <label className={checkoutTarget === 'temporary' ? 'checkout-option selected' : 'checkout-option'}>
+            <input type="radio" name="checkout-target" value="temporary" checked={checkoutTarget === 'temporary'} onChange={() => setCheckoutTarget('temporary')} />
+            <span><strong>Temporary checkout</strong><small>Isolated worktree in the system temporary directory (/tmp on Linux). Your repository stays unchanged.</small></span>
+          </label>
+          <label className={checkoutTarget === 'repository' ? 'checkout-option selected' : 'checkout-option'}>
+            <input type="radio" name="checkout-target" value="repository" checked={checkoutTarget === 'repository'} onChange={() => setCheckoutTarget('repository')} />
+            <span><strong>Actual repository</strong><small>Checks out this PR's commit here in detached HEAD. Requires a clean working tree and stays checked out when you leave.</small></span>
+          </label>
+        </fieldset>
       </div>
       <div className="sheet-ft"><span className="grow">No checkout is prepared if you cancel.</span><button className="btn" data-testid="workspace/checkout-cancel" disabled={busy} onClick={closeDialog}>Cancel</button>
-        <button className="btn primary" data-testid="workspace/checkout-confirm" disabled={busy} onClick={() => { void run(async () => { const session = await workspaceApi.checkout(checkout.project.id, checkout.pr.id); window.location.assign(session.url); }); }}>{busy ? 'Preparing…' : 'Yes, prepare checkout'}</button></div>
+        <button className="btn primary" data-testid="workspace/checkout-confirm" disabled={busy} onClick={() => { void run(async () => { const session = await workspaceApi.checkout(checkout.project.id, checkout.pr.id, checkoutTarget); window.location.assign(session.url); }); }}>{busy ? 'Preparing…' : 'Yes, prepare checkout'}</button></div>
     </Overlay>}
     {remove && <Overlay label="Remove project" onClose={closeDialog}><div className="sheet-hd">Remove {remove.name}?</div><div className="desk-form"><p>Remove this project from the review desk. Its repository files remain on disk.</p>{errorSurface}</div>
       <div className="sheet-ft"><span className="grow" /><button className="btn" disabled={busy} onClick={closeDialog}>Cancel</button><button className="btn primary" disabled={busy} onClick={() => { void run(async () => {

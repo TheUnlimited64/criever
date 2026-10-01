@@ -21,7 +21,7 @@ const projectPath = (id: string) => `/projects/${encodeURIComponent(id)}`;
 const post = (body?: object): RequestInit => ({ method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}) });
 
 export const workspaceApi = {
-  folders: (path: string) => request<WorkspaceFolders>(`/folders?${new URLSearchParams({ path })}`),
+  suggestFolders: (path: string, signal: AbortSignal) => request<WorkspaceFolders>(`/folders?${new URLSearchParams({ path, autocomplete: 'true' })}`, { signal }),
   async snapshot(): Promise<WorkspaceSnapshot | null> {
     try { return await request<WorkspaceSnapshot>(''); }
     catch (error) { if (error instanceof WorkspaceApiError && error.status === 404) return null; throw error; }
@@ -33,8 +33,8 @@ export const workspaceApi = {
   refreshProject: (id: string) => request<WorkspaceProject>(`${projectPath(id)}/refresh`, post()),
   reviewed: (id: string, number: number, sourceHead: string | null) =>
     request<WorkspaceProject>(`${projectPath(id)}/prs/${number}/reviewed`, post({ sourceHead })),
-  checkout: (id: string, number: number) =>
-    request<WorkspaceSession>(`${projectPath(id)}/prs/${number}/checkout`, post({ confirmed: true })),
+  checkout: (id: string, number: number, target: WorkspaceSession['checkoutTarget']) =>
+    request<WorkspaceSession>(`${projectPath(id)}/prs/${number}/checkout`, post({ confirmed: true, target })),
 };
 
 export const workspaceKey = ['workspace'] as const;

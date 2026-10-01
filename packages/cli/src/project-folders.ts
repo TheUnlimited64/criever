@@ -1,5 +1,5 @@
 import { readdir, realpath, stat } from 'node:fs/promises';
-import { dirname, join, resolve, sep } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import type { WorkspaceFolders } from '@criever/shared';
 import { DaemonError } from './errors';
 
@@ -29,7 +29,7 @@ export async function listProjectFolders(input: string, locations: Locations): P
       return directory ? { name: entry.name, path: child } : null;
     }));
     return {
-      path, parentPath: dirname(path) === path ? null : dirname(path), homePath: resolve(locations.home),
+      path, parentPath: dirname(path) === path ? null : dirname(path), homePath: resolve(locations.home), separator: sep,
       folders: folders.filter(folder => folder !== null).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })),
     };
   } catch (error) {
@@ -39,4 +39,13 @@ export async function listProjectFolders(input: string, locations: Locations): P
     }
     throw error;
   }
+}
+
+export async function suggestProjectFolders(input: string, locations: Locations): Promise<WorkspaceFolders> {
+  const value = input.trim();
+  if (!value || value === '~' || value.endsWith('/') || value.endsWith(sep)) return listProjectFolders(value || '~', locations);
+  const path = resolveProjectPath(value, locations);
+  const listing = await listProjectFolders(dirname(path), locations);
+  const prefix = basename(path).toLocaleLowerCase();
+  return { ...listing, folders: listing.folders.filter(folder => folder.name.toLocaleLowerCase().startsWith(prefix)) };
 }
