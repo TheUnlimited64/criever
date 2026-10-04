@@ -22,7 +22,17 @@ export interface PrState {
   anchors: Record<number, Anchor>;
   viewed: Record<string, string>;
   lastSeenHead?: string;
+  ai?: AiState;
 }
+
+export type HarnessKind = 'claude' | 'codex' | 'opencode';
+export interface Harness { readonly id: string; readonly kind: HarnessKind; readonly name: string; readonly command?: string }
+export interface AiLine { readonly path: string; readonly line: number; readonly side: Side; readonly body: string; readonly id: string; readonly anchorCommit: string }
+export interface AiQuestion extends AiLine { readonly question: string; readonly reply: string; readonly harnessId: string }
+export interface AiFinding extends AiLine { readonly harnessId: string }
+export interface AiMessage { readonly id: string; readonly role: 'reviewer' | 'assistant'; readonly body: string }
+export interface AiState { questions: AiQuestion[]; findings: AiFinding[]; lookouts: AiLine[]; chat: AiMessage[] }
+export interface AiResponse extends AiState { harnesses: Harness[] }
 
 export type AnchorStatus =
   | { status: 'same' }
