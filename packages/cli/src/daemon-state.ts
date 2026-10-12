@@ -6,12 +6,23 @@ import { DaemonError } from './errors';
 const object = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const nullableString = (v: unknown) => v === null || typeof v === 'string';
 
+const optional = (v: unknown, ok: (v: unknown) => boolean) => v === undefined || ok(v);
+const validSignals = (v: unknown) => object(v) && nullableString(v.myActivityAt) && nullableString(v.observedHead)
+  && (v.myDecision === null || v.myDecision === 'approved' || v.myDecision === 'changes_requested') && typeof v.commitsChanged === 'boolean'
+  && Array.isArray(v.discussion) && v.discussion.every(i => object(i) && typeof i.id === 'string' && typeof i.author === 'string'
+    && typeof i.at === 'string' && ['reply', 'comment', 'feedback'].includes(String(i.kind)));
+const validReason = (v: unknown) => object(v) && ['commits', 'reply', 'comment', 'feedback'].includes(String(v.kind))
+  && (v.kind === 'commits' || (typeof v.author === 'string' && typeof v.at === 'string' && Number.isSafeInteger(v.count)));
+
 function validPr(v: unknown): v is WorkspacePullRequest {
   return object(v) && Number.isSafeInteger(v.id) && Number(v.id) > 0
     && ['title', 'url', 'author', 'sourceBranch', 'destinationBranch', 'sourceHead', 'destinationHead', 'updatedAt'].every(k => typeof v[k] === 'string')
     && typeof v.assignedToMe === 'boolean' && typeof v.draft === 'boolean'
     && nullableString(v.reviewedHead) && nullableString(v.reviewedAt)
-    && ['unreviewed', 'reviewed', 'updated'].includes(String(v.status));
+    && ['unreviewed', 'reviewed', 'updated'].includes(String(v.status))
+    && optional(v.reviewedActivityAt, nullableString) && optional(v.reviewedDiscussionThrough, nullableString)
+    && optional(v.signals, validSignals) && optional(v.pending, x => typeof x === 'boolean')
+    && optional(v.recheck, x => Array.isArray(x) && x.every(validReason));
 }
 function validProject(v: unknown): v is WorkspaceProject {
   return object(v) && ['id', 'name', 'path', 'owner', 'repo'].every(k => typeof v[k] === 'string' && v[k] !== '')

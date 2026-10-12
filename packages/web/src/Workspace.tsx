@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { WorkspaceProject, WorkspacePullRequest, WorkspaceSession } from '@criever/shared';
+import { describeRecheck } from '@criever/shared';
 import { App } from './App';
 import { Overlay } from './components/Overlay';
 import { projectHref, useWorkspace, workspaceApi, workspaceKey } from './workspace-api';
@@ -12,7 +13,10 @@ const date = (iso: string | null) => {
   const value = new Date(iso);
   return Number.isNaN(+value) ? 'Unknown time' : value.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
-const statusLabels = { unreviewed: 'Not reviewed', reviewed: 'Reviewed', updated: 'Updated since review' } as const;
+const statusLabels = { unreviewed: 'Not reviewed', reviewed: 'Reviewed', updated: 'Needs recheck' } as const;
+type Filter = 'all' | 'assigned' | 'pending' | 'updated';
+const isPending = (pr: WorkspacePullRequest) => pr.pending ?? (pr.assignedToMe && pr.status === 'unreviewed');
+const when = (iso: string) => { const value = new Date(iso); return Number.isNaN(+value) ? '' : value.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); };
 type Entry = { readonly project: WorkspaceProject; readonly pr: WorkspacePullRequest };
 
 export function WorkspaceError({ error, retry }: { readonly error: Error; readonly retry: () => void }) {
@@ -29,9 +33,20 @@ export function DeskNav({ project }: { readonly project?: WorkspaceProject }) {
   </nav>;
 }
 
-function PrList({ entries, busy, open, mark, empty }: {
+export function RecheckReasons({ pr }: { readonly pr: WorkspacePullRequest }) {
+  const reasons = pr.status === 'updated' ? pr.recheck ?? [] : [];
+  if (!reasons.length) return null;
+  return <ul className="desk-recheck" data-testid={`pr/${pr.id}/recheck`} aria-label="Why this needs another look">
+    {reasons.map(reason => <li key={reason.kind} data-testid={`pr/${pr.id}/recheck/${reason.kind}`}>
+      <span>{describeRecheck(reason)}</span>
+      {reason.kind !== 'commits' && <small>{reason.author}{when(reason.at) && ` · ${when(reason.at)}`}{reason.count > 1 && ` · ${reason.count} in total`}</small>}
+    </li>)}
+  </ul>;
+}
+
+function PrList({ entries, busy, open, mark, clear, empty }: {
   readonly entries: readonly Entry[]; readonly busy: boolean;
-  readonly open: (entry: Entry) => void; readonly mark: (entry: Entry) => void; readonly empty: string;
+  readonly open: (entry: Entry) => void; readonly mark: (entry: Entry) => void; readonly clear: (entry: Entry) => void; readonly empty: string;
 }) {
   return <div className="desk-list">
     {entries.length === 0 && <div className="desk-empty"><p>{empty}</p></div>}
@@ -42,13 +57,16 @@ function PrList({ entries, busy, open, mark, empty }: {
           <div className="desk-meta"><a href={projectHref(project.id)}>{project.name}</a><span>#{pr.id}</span><span>{pr.author}</span>{pr.draft && <span className="chip grey">Draft</span>}</div>
           <button className="desk-pr-title" data-testid={`pr/${pr.id}/open`} disabled={busy} onClick={() => open(entry)}>{pr.title}</button>
           <div className="desk-meta desk-branches"><code title={pr.sourceBranch}>{pr.sourceBranch}</code><span aria-hidden="true">→</span><code title={pr.destinationBranch}>{pr.destinationBranch}</code><span>Updated {date(pr.updatedAt)}</span></div>
+          <RecheckReasons pr={pr} />
         </div>
         <div className="desk-pr-state">
           <span className={`chip ${pr.status === 'updated' ? 'amber' : pr.status === 'reviewed' ? 'grey' : 'blue'}`} data-testid={`pr/${pr.id}/status`}>{statusLabels[pr.status]}</span>
-          {pr.assignedToMe && <span className="chip blue" data-testid={`pr/${pr.id}/review-requested`}>Review requested</span>}
+          {pr.assignedToMe && <span className="chip blue" data-testid={`pr/${pr.id}/review-requested`}>Assigned to you</span>}
+          {isPending(pr) && <span className="chip blue" data-testid={`pr/${pr.id}/pending`}>Pending</span>}
         </div>
         <div className="desk-row-actions">
-          <button className="btn sm" data-testid={`pr/${pr.id}/reviewed`} disabled={busy} title="Local tracking only; does not approve on the provider" onClick={() => mark(entry)}>{pr.status === 'reviewed' ? 'Clear reviewed' : 'Mark reviewed'}</button>
+          <button className="btn sm" data-testid={`pr/${pr.id}/reviewed`} disabled={busy} title="Local tracking only; does not approve on the provider" onClick={() => mark(entry)}>{pr.status === 'reviewed' && pr.reviewedHead != null ? 'Clear reviewed' : 'Mark reviewed'}</button>
+          {pr.status === 'updated' && pr.reviewedHead != null && <button className="btn sm ghost" data-testid={`pr/${pr.id}/clear-reviewed`} disabled={busy} title="Forget the local marker; the status follows your activity on the provider" onClick={() => clear(entry)}>Clear reviewed</button>}
           <a className="btn sm ghost" href={pr.url} target="_blank" rel="noreferrer" aria-label={`Open PR #${pr.id} on provider`}>Provider ↗</a>
         </div>
       </article>;
@@ -67,7 +85,7 @@ export function Workspace() {
   const [checkout, setCheckout] = useState<Entry | null>(null);
   const [checkoutTarget, setCheckoutTarget] = useState<WorkspaceSession['checkoutTarget']>('temporary');
   const [remove, setRemove] = useState<WorkspaceProject | null>(null);
-  const [filter, setFilter] = useState<'all' | 'assigned' | 'updated'>(projectId ? 'all' : 'updated');
+  const [filter, setFilter] = useState<Filter>(projectId ? 'all' : 'updated');
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<{ error: Error; retry: () => Promise<void> } | null>(null);
   const [notice, setNotice] = useState('');
@@ -95,14 +113,18 @@ export function Workspace() {
       setNotice(next.projects.some(p => p.error) ? 'Some projects could not sync. Their last successful results are shown.' : 'Workspace refreshed.');
     }
   });
-  const mark = (entry: Entry) => void run(async () => {
-    updateProject(await workspaceApi.reviewed(entry.project.id, entry.pr.id, entry.pr.status === 'reviewed' ? null : entry.pr.sourceHead));
-    setNotice(entry.pr.status === 'reviewed' ? 'Local review marker cleared.' : 'Marked reviewed locally. No provider approval was sent.');
+  const setMarker = (entry: Entry, clearing: boolean) => void run(async () => {
+    updateProject(await workspaceApi.reviewed(entry.project.id, entry.pr.id, clearing ? null : entry.pr.sourceHead));
+    setNotice(clearing ? 'Local review marker cleared.' : 'Marked reviewed locally. No provider approval was sent.');
   });
+  const mark = (entry: Entry) => setMarker(entry, entry.pr.status === 'reviewed' && entry.pr.reviewedHead != null);
+  const clear = (entry: Entry) => setMarker(entry, true);
   const entries = (project ? [project] : projects).flatMap(p => p.pullRequests.map(pr => ({ project: p, pr })));
   const assigned = entries.filter(e => e.pr.assignedToMe);
+  const pending = entries.filter(e => isPending(e.pr));
   const updated = entries.filter(e => e.pr.status === 'updated');
-  const visible = filter === 'assigned' ? assigned : filter === 'updated' ? updated : entries;
+  const visible = { all: entries, assigned, pending, updated }[filter];
+  const titles: Record<Filter, string> = { all: 'Open pull requests', assigned: 'Assigned to me', pending: 'Pending', updated: 'Needs recheck' };
   const closeDialog = () => { if (!busy) { setAddOpen(false); setCheckout(null); setRemove(null); setFailure(null); } };
   const errorSurface = failure && <WorkspaceError error={failure.error} retry={() => { void failure.retry(); }} />;
 
@@ -117,7 +139,7 @@ export function Workspace() {
       <div className="desk-content">
         <header className="desk-heading">
           <div><div className="desk-eyebrow">{project ? `${project.provider} · ${project.owner} / ${project.repo}` : 'Your workspace'}</div><h1>{project ? project.name : 'Review desk'}</h1>
-            <p>{project ? 'Open pull requests. Keep track of what you have reviewed on this machine.' : 'Pick up where you left off. New commits first, repositories within reach.'}</p>
+            <p>{project ? 'Open pull requests. Keep track of what you have reviewed on this machine.' : 'Pick up where you left off. Pull requests that need a recheck come first.'}</p>
             {project && <code className="desk-path" title={project.path}>{project.path}</code>}
           </div>
           <div className="desk-actions"><button className="btn" data-testid="workspace/refresh" disabled={busy} onClick={() => { void refresh(); }}>{busy ? 'Working…' : 'Refresh'}</button>
@@ -131,9 +153,10 @@ export function Workspace() {
         {project?.error && <div className="desk-error" role="alert"><span>{project.error}</span><button className="btn sm" disabled={busy} onClick={() => { void refresh(); }}>Retry sync</button></div>}
         {(!projectId || project) && <>
           <div className="desk-summary" aria-label="Review summary">
-            <button data-testid="workspace/summary-updates" aria-pressed={filter === 'updated'} onClick={() => setFilter('updated')}><strong>{updated.length}</strong><span>Updates since your review</span><small>Revisit changed pull requests</small></button>
-            <button aria-pressed={filter === 'assigned'} onClick={() => setFilter('assigned')}><strong>{assigned.length}</strong><span>Review requested</span><small>Waiting on your review</small></button>
-            <button aria-pressed={filter === 'all'} onClick={() => setFilter('all')}><strong>{entries.length}</strong><span>Open pull requests</span><small>{project ? 'Across this project' : `Across ${projects.length} projects`}</small></button>
+            <button data-testid="workspace/summary-all" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}><strong>{entries.length}</strong><span>All open</span><small>{project ? 'Across this project' : `Across ${projects.length} projects`}</small></button>
+            <button data-testid="workspace/summary-assigned" aria-pressed={filter === 'assigned'} onClick={() => setFilter('assigned')}><strong>{assigned.length}</strong><span>Assigned to me</span><small>Including ones you reviewed</small></button>
+            <button data-testid="workspace/summary-pending" aria-pressed={filter === 'pending'} onClick={() => setFilter('pending')}><strong>{pending.length}</strong><span>Pending</span><small>Assigned, not yet reviewed</small></button>
+            <button data-testid="workspace/summary-updates" aria-pressed={filter === 'updated'} onClick={() => setFilter('updated')}><strong>{updated.length}</strong><span>Needs recheck</span><small>Changed since your review</small></button>
           </div>
           {!projectId && <section className="desk-section" aria-labelledby="projects-title">
             <div className="desk-section-head"><h2 id="projects-title">Projects <span>{projects.length}</span></h2><span className="desk-meta">Local repositories</span></div>
@@ -143,21 +166,22 @@ export function Workspace() {
                 <div><a className="desk-project-name" data-testid={`project/${p.id}`} href={projectHref(p.id)}>{p.name}<span aria-hidden="true">↗</span></a><div className="desk-meta">{p.provider} · {p.owner} / {p.repo}</div><code className="desk-path" title={p.path}>{p.path}</code>
                   {p.error && <div className="desk-project-error" role="alert">{p.error}<button className="btn sm" disabled={busy} onClick={() => { void run(async () => updateProject(await workspaceApi.refreshProject(p.id))); }}>Retry sync</button></div>}
                 </div>
-                <div className="desk-project-counts"><span>{p.pullRequests.length} open</span><span>{p.pullRequests.filter(pr => pr.assignedToMe).length} awaiting you</span><span className="desk-meta">Synced {date(p.refreshedAt)}</span></div>
+                <div className="desk-project-counts"><span>{p.pullRequests.length} open</span><span>{p.pullRequests.filter(isPending).length} pending</span><span className="desk-meta">Synced {date(p.refreshedAt)}</span></div>
                 <button className="btn sm ghost" data-testid={`project/${p.id}/remove`} disabled={busy} aria-label={`Remove ${p.name} from workspace`} onClick={() => { setFailure(null); setRemove(p); }}>Remove</button>
               </div>)}
             </div>
           </section>}
           <section className="desk-section" data-testid={filter === 'updated' ? 'workspace/updates' : 'workspace/pull-requests'} aria-labelledby="prs-title">
-            <div className="desk-section-head"><h2 id="prs-title">{filter === 'updated' ? 'Updates since your review' : filter === 'assigned' ? 'Review requested' : 'Open pull requests'} <span>{visible.length}</span></h2>
+            <div className="desk-section-head"><h2 id="prs-title">{titles[filter]} <span>{visible.length}</span></h2>
               <div className="seg" aria-label="Filter pull requests">
                 <button className={filter === 'all' ? 'on' : ''} aria-pressed={filter === 'all'} data-testid="workspace/filter/all" onClick={() => setFilter('all')}>All open</button>
-                <button className={filter === 'assigned' ? 'on' : ''} aria-pressed={filter === 'assigned'} data-testid="workspace/assigned" onClick={() => setFilter('assigned')}>Review requested</button>
-                <button className={filter === 'updated' ? 'on' : ''} aria-pressed={filter === 'updated'} data-testid="workspace/filter/updated" onClick={() => setFilter('updated')}>Updated</button>
+                <button className={filter === 'assigned' ? 'on' : ''} aria-pressed={filter === 'assigned'} data-testid="workspace/assigned" onClick={() => setFilter('assigned')}>Assigned to me</button>
+                <button className={filter === 'pending' ? 'on' : ''} aria-pressed={filter === 'pending'} data-testid="workspace/filter/pending" onClick={() => setFilter('pending')}>Pending</button>
+                <button className={filter === 'updated' ? 'on' : ''} aria-pressed={filter === 'updated'} data-testid="workspace/filter/updated" onClick={() => setFilter('updated')}>Needs recheck</button>
               </div>
             </div>
-            <PrList entries={visible} busy={busy} open={entry => { setFailure(null); setCheckoutTarget('temporary'); setCheckout(entry); }} mark={mark}
-              empty={filter === 'updated' ? 'You are caught up. No new commits since your local reviews.' : filter === 'assigned' ? 'No open pull requests are waiting on your review.' : 'No open pull requests in this project yet.'} />
+            <PrList entries={visible} busy={busy} open={entry => { setFailure(null); setCheckoutTarget('temporary'); setCheckout(entry); }} mark={mark} clear={clear}
+              empty={{ updated: 'You are caught up. Nothing new since your reviews.', assigned: 'No open pull requests are assigned to you.', pending: 'Nothing is waiting on a first review from you.', all: 'No open pull requests in this project yet.' }[filter]} />
           </section>
           <p className="desk-footnote">Review markers stay on this machine. They do not approve or change pull requests on your provider.</p>
         </>}

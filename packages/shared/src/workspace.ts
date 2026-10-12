@@ -1,3 +1,5 @@
+import type { RecheckReason, ReviewSignals } from './review';
+
 export interface WorkspacePullRequest {
   readonly id: number;
   readonly title: string;
@@ -13,6 +15,14 @@ export interface WorkspacePullRequest {
   readonly reviewedHead: string | null;
   readonly reviewedAt: string | null;
   readonly status: 'unreviewed' | 'reviewed' | 'updated';
+  /** Review tracking added later; absent in workspace state saved by older versions. */
+  readonly reviewedActivityAt?: string | null;
+  readonly reviewedDiscussionThrough?: string | null;
+  readonly signals?: ReviewSignals;
+  /** Assigned to the user with no review activity or local acknowledgement. */
+  readonly pending?: boolean;
+  /** Why the pull request needs another look; derived with `deriveReview` alongside `status`. */
+  readonly recheck?: readonly RecheckReason[];
 }
 
 export interface WorkspaceProject {

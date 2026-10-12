@@ -3,7 +3,7 @@ import type { WorkspaceSession } from '@criever/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { App } from './App';
 import { usePr } from './hooks';
-import { WorkspaceError } from './Workspace';
+import { RecheckReasons, WorkspaceError } from './Workspace';
 import { projectHref, useWorkspace, workspaceApi, workspaceKey } from './workspace-api';
 
 export function SessionReview({ id }: { readonly id: string }) {
@@ -26,7 +26,9 @@ function SessionContents({ session }: { readonly session: WorkspaceSession }) {
   const project = workspace.data?.projects.find(p => p.id === session.projectId);
   const tracked = project?.pullRequests.find(p => p.id === session.prId);
   const sourceHead = pr?.sourceHead ?? session.sourceHead;
-  const reviewed = (markedHead ?? tracked?.reviewedHead) === sourceHead;
+  // New discussion on an unchanged head leaves the pull request in recheck, so it can be acknowledged again.
+  const reviewed = (markedHead ?? tracked?.reviewedHead) === sourceHead && tracked?.status !== 'updated';
+  const acknowledged = (markedHead ?? tracked?.reviewedHead) != null;
   const mark = async (head: string | null) => {
     setBusy(true); setError(null);
     try {
@@ -49,10 +51,11 @@ function SessionContents({ session }: { readonly session: WorkspaceSession }) {
         <span className="desk-crumb" aria-current="page">Review #{session.prId}</span>
         <div className="session-actions">
           <button className="btn sm" data-testid="workspace/session-reviewed" disabled={busy || !pr || reviewed} title="Local tracking only, not provider approval" onClick={() => { void mark(sourceHead); }}>{busy ? 'Saving…' : reviewed ? 'Reviewed locally' : 'Mark reviewed'}</button>
-          {reviewed && <button className="btn sm ghost" data-testid="workspace/session-clear-reviewed" disabled={busy} onClick={() => { void mark(null); }}>Clear reviewed</button>}
+          {acknowledged && <button className="btn sm ghost" data-testid="workspace/session-clear-reviewed" disabled={busy} onClick={() => { void mark(null); }}>Clear reviewed</button>}
         </div>
       </nav>
       <div className="session-message" role="status">{notice || `Review markers are local only · source ${sourceHead.slice(0, 7)}`}</div>
+      {tracked && <div className="session-message" data-testid="workspace/session-recheck"><RecheckReasons pr={tracked} /></div>}
       <div className="session-message session-location" data-testid="workspace/session-location">
         <span>{session.checkoutTarget === 'temporary' ? 'Temporary checkout' : 'Actual repository'}</span>
         <code>{session.checkoutPath}</code>

@@ -1,11 +1,14 @@
 import { basename } from 'node:path';
 import { homedir } from 'node:os';
 import type { WorkspaceProject, WorkspacePullRequest } from '@criever/shared';
+import { deriveReview, discussionThrough } from '@criever/shared';
 import { defaultPaths, loadCredentials, loadGithubCredentials } from './config';
 import { Git } from './git';
 import { GitHubClient } from './github';
 import { BitbucketClient, fullCommitId } from './bitbucket';
 import { rawPrToMeta } from './provider';
+import { collectSignals } from './review-signals';
+import { mapLimit } from './concurrency';
 import { parseRemote, remoteProvider } from './remote';
 import { serveStatic } from './server';
 import { DaemonError as ApiError, UserError } from './errors';
@@ -18,8 +21,9 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 const object = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const nullableString = (v: unknown) => v === null || typeof v === 'string';
 
-const status = (head: string, reviewed: string | null): WorkspacePullRequest['status'] =>
-  reviewed === null ? 'unreviewed' : reviewed === head ? 'reviewed' : 'updated';
+// Status, the pending flag and recheck reasons always come from the same derivation.
+const tracked = (row: WorkspacePullRequest): WorkspacePullRequest => ({ ...row, ...deriveReview(row) });
+const REFRESH_CONCURRENCY = 4;
 
 export async function createDaemon(opts: {
   env: Record<string, string | undefined>; cwd?: string; staticDir: string | null;
@@ -56,23 +60,27 @@ export async function createDaemon(opts: {
     let next: WorkspaceProject;
     try {
       const c = await client(p);
-      const reviewedHeads = new Map<number, string>();
-      const rows = c instanceof GitHubClient ? await c.listOpenPrs(p.owner, p.repo)
-        : await Promise.all((await c.listOpenPrs(p.owner, p.repo)).map(async ({ pr, assignedToMe }) => {
+      const now = new Date();
+      const rows: WorkspacePullRequest[] = c instanceof GitHubClient
+        ? (await c.listOpenPrs(p.owner, p.repo)).map(row => {
+          const old = p.pullRequests.find(pr => pr.id === row.id);
+          return tracked({ ...row, url: row.url ?? '', status: 'unreviewed', reviewedHead: old?.reviewedHead ?? null, reviewedAt: old?.reviewedAt ?? null,
+            reviewedActivityAt: old?.reviewedActivityAt, reviewedDiscussionThrough: old?.reviewedDiscussionThrough });
+        })
+        : await mapLimit(await c.listOpenPrs(p.owner, p.repo), REFRESH_CONCURRENCY, async ({ pr, assignedToMe }) => {
           const old = p.pullRequests.find(row => row.id === pr.id);
-          if (old?.reviewedHead != null) {
-            reviewedHeads.set(pr.id, await c.resolveRevision(p.owner, p.repo, { ...pr.source, commit: { hash: old.reviewedHead } }));
-          }
-          // Unreviewed rows need no commit-detail calls during polling.
-          const sourceHead = old?.reviewedHead == null ? pr.source.commit.hash
-            : await c.resolveRevision(p.owner, p.repo, pr.source);
-          return { ...rawPrToMeta(pr), sourceHead, assignedToMe, draft: pr.draft ?? false, updatedAt: pr.updated_on ?? pr.created_on };
-        }));
-      next = { ...p, error: null, refreshedAt: new Date().toISOString(), pullRequests: rows.map(row => {
-        const old = p.pullRequests.find(pr => pr.id === row.id);
-        const reviewedHead = reviewedHeads.get(row.id) ?? old?.reviewedHead ?? null;
-        return { ...row, url: row.url ?? '', reviewedHead, reviewedAt: old?.reviewedAt ?? null, status: status(row.sourceHead, reviewedHead) };
-      }) };
+          let resolved: Promise<string> | null = null;
+          const head = () => resolved ??= c.resolveRevision(p.owner, p.repo, pr.source);
+          const signals = await collectSignals(c, p.owner, p.repo, pr, { previous: old, head, now });
+          const reviewedHead = old?.reviewedHead == null ? null
+            : await c.resolveRevision(p.owner, p.repo, { ...pr.source, commit: { hash: old.reviewedHead } });
+          // Only reviewed pull requests need a full commit ID to compare against.
+          const sourceHead = reviewedHead !== null || signals.myActivityAt !== null ? await head() : pr.source.commit.hash;
+          return tracked({ ...rawPrToMeta(pr), url: pr.links.html.href, sourceHead, assignedToMe, draft: pr.draft ?? false, updatedAt: pr.updated_on ?? pr.created_on,
+            reviewedHead, reviewedAt: old?.reviewedAt ?? null, status: 'unreviewed', signals,
+            reviewedActivityAt: old?.reviewedActivityAt, reviewedDiscussionThrough: old?.reviewedDiscussionThrough });
+        });
+      next = { ...p, error: null, refreshedAt: now.toISOString(), pullRequests: rows };
     } catch (e) {
       next = { ...p, error: e instanceof Error ? e.message : String(e) };
       opts.log(`Refresh ${p.owner}/${p.repo}: ${next.error}`);
@@ -173,8 +181,16 @@ export async function createDaemon(opts: {
           if (reviewedHead !== null && (!fullCommitId(reviewedHead) || (reviewedHead !== sourceHead
             && ![...sessions.values()].some(s => s.info.projectId === project.id && s.info.prId === prId
               && (s.info.sourceHead === reviewedHead || s.deps.meta.sourceHead === reviewedHead))))) throw new ApiError('Unknown review revision', 409);
+          // Acknowledge the discussion as the user can see it now, not as of the last poll.
+          let signals = pr.signals;
+          if (reviewedHead !== null && project.provider === 'bitbucket') {
+            const c = await client(project);
+            if (c instanceof BitbucketClient) signals = await collectSignals(c, project.owner, project.repo, await c.getPr(project.owner, project.repo, prId), { previous: pr, head: async () => sourceHead, now: new Date() });
+          }
           const next: WorkspaceProject = { ...project, pullRequests: project.pullRequests.map(row => row.id === prId
-            ? { ...row, sourceHead, reviewedHead, reviewedAt: reviewedHead === null ? null : new Date().toISOString(), status: status(sourceHead, reviewedHead) } : row) };
+            ? tracked({ ...row, sourceHead, reviewedHead, signals, reviewedAt: reviewedHead === null ? null : new Date().toISOString(),
+              reviewedActivityAt: reviewedHead === null ? null : signals?.myActivityAt ?? null,
+              reviewedDiscussionThrough: reviewedHead === null ? null : discussionThrough(signals) }) : row) };
           workspace.projects = workspace.projects.map(row => row.id === project.id ? next : row);
           await workspace.save();
           return json(next);

@@ -1,16 +1,21 @@
 import type { BbComment, PrCommit, Side } from '@criever/shared';
 import { DaemonError } from './errors';
+import { mapLimit } from './concurrency';
 
 export const fullCommitId = (id: string) => /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(id);
 type PrRevision = { branch: { name: string }; commit: { hash: string }; repository?: { full_name: string } };
 
 export interface RawPr {
-  state?: string; draft?: boolean; updated_on?: string; reviewers?: { uuid: string }[];
+  state?: string; draft?: boolean; updated_on?: string; reviewers?: { uuid: string }[]; participants?: RawParticipant[];
   id: number; title: string; created_on: string; description?: string;
   author: { display_name: string; uuid: string };
   links: { html: { href: string } };
   source: PrRevision;
   destination: PrRevision;
+}
+export interface RawParticipant {
+  user?: { display_name?: string; uuid?: string }; role?: string; approved?: boolean;
+  state?: string | null; participated_on?: string | null;
 }
 interface RawComment {
   id: number; created_on: string; deleted: boolean; parent?: { id: number };
@@ -18,6 +23,17 @@ interface RawComment {
   inline?: { path: string; from: number | null; to: number | null }; resolution?: unknown;
 }
 interface Page<T> { values: T[]; next?: string }
+
+// Bitbucket omits reviewers and participants from list responses unless asked; `+` adds them to the defaults.
+const LIST_FIELDS = '+values.reviewers,+values.participants';
+const DETAIL_CONCURRENCY = 4;
+const withFields = (url: string) => {
+  const parsed = new URL(url);
+  parsed.searchParams.set('fields', LIST_FIELDS); // serializes the literal plus signs as %2B
+  return parsed.href;
+};
+export const sameUuid = (a: string | undefined, b: string | undefined) =>
+  !!a && !!b && a.replace(/[{}]/g, '').toLowerCase() === b.replace(/[{}]/g, '').toLowerCase();
 
 export class BitbucketError extends Error {
   constructor(public status: number, public body: string, message: string) { super(message); this.name = 'BitbucketError'; }
@@ -56,12 +72,13 @@ export class BitbucketClient {
     return res.json() as Promise<T>;
   }
 
-  private async all<T>(url: string): Promise<T[]> {
+  private async all<T>(url: string, nextUrl: (next: string) => string = next => next): Promise<T[]> {
     const out: T[] = []; let next: string | undefined = url;
-    while (next) { const page: Page<T> = await this.req<Page<T>>(next); out.push(...page.values); next = page.next; }
+    while (next) { const page: Page<T> = await this.req<Page<T>>(next); out.push(...page.values); next = page.next && nextUrl(page.next); }
     return out;
   }
 
+  currentUserUuid(): Promise<string> { return this.myUuid(); }
   private myUuid(): Promise<string> {
     return (this.me ??= this.req<{ uuid: string }>('/user').then(u => u.uuid));
   }
@@ -110,11 +127,19 @@ export class BitbucketClient {
     return { ...pr, source: { ...pr.source, commit: { hash: source } }, destination: { ...pr.destination, commit: { hash: destination } } };
   }
   async listOpenPrs(ws: string, repo: string) {
-    const [prs, me] = await Promise.all([
-      this.all<RawPr>(`/repositories/${encodeURIComponent(ws)}/${encodeURIComponent(repo)}/pullrequests?state=OPEN`),
+    const base = `/repositories/${encodeURIComponent(ws)}/${encodeURIComponent(repo)}/pullrequests`;
+    const [listed, me] = await Promise.all([
+      // Built through URL so the `+` prefixes are percent-encoded; a bare `+` would decode as a space.
+      this.all<RawPr>(withFields(`${this.base}${base}?state=OPEN`), withFields),
       this.myUuid(),
     ]);
-    return prs.map(pr => ({ pr, assignedToMe: !!pr.reviewers?.some(u => u.uuid === me) }));
+    // A page that still omits reviewer data must not read as "nobody is assigned": ask for the detail view.
+    const prs = await mapLimit(listed, DETAIL_CONCURRENCY, async pr => {
+      if (pr.reviewers !== undefined && pr.participants !== undefined) return pr;
+      const detail = await this.req<Partial<RawPr>>(`${base}/${pr.id}`);
+      return { ...pr, reviewers: pr.reviewers ?? detail.reviewers, participants: pr.participants ?? detail.participants };
+    });
+    return prs.map(pr => ({ pr, assignedToMe: !!pr.reviewers?.some(u => sameUuid(u.uuid, me)) }));
   }
 
   async listComments(ws: string, repo: string, id: number): Promise<BbComment[]> {

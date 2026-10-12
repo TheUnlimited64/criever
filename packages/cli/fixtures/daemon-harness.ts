@@ -25,10 +25,21 @@ let unavailable = false;
 let generation = 0;
 let checkoutCount = 0;
 let abbreviated = false;
+// The viewer is distinct from the fixture's comment authors, so review tracking starts from a clean slate.
+const viewer = { display_name: 'Example Me', uuid: '{viewer}' };
+type Scenario = { assigned?: boolean; comments?: unknown[]; participants?: unknown[]; commits?: unknown[] };
+let scenarios: Record<number, Scenario> = {};
 const reportedHash = (hash: string) => abbreviated ? hash.slice(0, 12) : hash;
 const wireFetch: typeof fetch = Object.assign(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
   const url = new URL(input instanceof Request ? input.url : String(input));
   if (unavailable) return Response.json({ error: { message: 'Provider temporarily unavailable' } }, { status: 503 });
+  if (url.pathname.endsWith('/user')) return Response.json(viewer);
+  const sub = /\/pullrequests\/(\d+)\/(comments|commits)$/.exec(url.pathname);
+  if (sub && init?.method !== 'POST') {
+    const override = scenarios[Number(sub[1])]?.[sub[2] as 'comments' | 'commits'];
+    if (override) return Response.json({ values: override });
+    if (sub[1] === '242' && sub[2] === 'comments') return Response.json({ values: [] });
+  }
   const commit = /\/commit\/([0-9a-f]+)$/.exec(url.pathname);
   if (commit) {
     const hashes = [repo.main, repo.c1, repo.c2, repo.c3].filter(hash => hash.startsWith(commit[1] ?? ''));
@@ -41,10 +52,10 @@ const wireFetch: typeof fetch = Object.assign(async (input: Parameters<typeof fe
       ...raw, state: 'OPEN', draft: false, updated_on: revision === repo.c2 ? '2026-09-02T08:00:00Z' : '2026-09-05T08:00:00Z',
       source: { ...raw.source, commit: { hash: reportedHash(revision) } },
       destination: { ...raw.destination, commit: { hash: reportedHash(repo.main) } },
-      reviewers: [{ display_name: 'Alex Morgan', uuid: '{me}' }],
-      participants: [{ user: { display_name: 'Alex Morgan', uuid: '{me}' }, role: 'REVIEWER', approved: false }],
+      reviewers: scenarios[241]?.assigned === false ? [] : [viewer],
+      participants: scenarios[241]?.participants ?? [{ user: viewer, role: 'REVIEWER', approved: false }],
     };
-    const other = { ...pr, id: 242, title: 'Keep catalog filters in the URL', reviewers: [], participants: [], source: { ...pr.source, commit: { hash: reportedHash(repo.c1) } } };
+    const other = { ...pr, id: 242, title: 'Keep catalog filters in the URL', reviewers: scenarios[242]?.assigned ? [viewer] : [], participants: scenarios[242]?.participants ?? [], source: { ...pr.source, commit: { hash: reportedHash(repo.c1) } } };
     return Response.json(url.pathname.endsWith('/pullrequests') ? { values: [pr, other] } : url.pathname.endsWith('/242') ? other : pr);
   }
   if (url.pathname.endsWith('/pullrequests/241/commits') && revision === repo.c2) {
@@ -73,12 +84,13 @@ const server = Bun.serve({
     const path = new URL(req.url).pathname;
     if (path === '/__fixture') return Response.json({ path: repo.root, currentHead: (await git.run(['rev-parse', 'HEAD'])).stdout.trim(), originalHead: repo.c3, firstHead: repo.c2, updatedHead: repo.c3, checkoutCount });
     if (path === '/__advance' && req.method === 'POST') { revision = repo.c3; return Response.json({ ok: true }); }
+    if (path === '/__scenario' && req.method === 'POST') { scenarios = await req.json(); return Response.json({ ok: true }); }
     if (path === '/__short' && req.method === 'POST') { abbreviated = true; return Response.json({ ok: true }); }
     if (path === '/__fail' && req.method === 'POST') { unavailable = true; return Response.json({ ok: true }); }
     if (path === '/__reset' && req.method === 'POST') {
       await daemon.stop();
       await git.run(['checkout', '--detach', repo.c3]);
-      generation += 1; revision = repo.c2; unavailable = false; checkoutCount = 0; abbreviated = false; stub.reset();
+      generation += 1; scenarios = {}; revision = repo.c2; unavailable = false; checkoutCount = 0; abbreviated = false; stub.reset();
       daemon = await start();
       return Response.json({ ok: true });
     }
