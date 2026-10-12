@@ -113,3 +113,4 @@
   .session-actions { margin-left: 0; width: 100%; }
   .session-message { padding-inline: var(--space-3); }
 }
+.desk-summary button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
