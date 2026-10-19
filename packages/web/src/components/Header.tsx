@@ -1,27 +1,34 @@
+import type { ReactNode } from 'react';
 import { useComments, useFiles, usePr, useInvalidate, useRangeReadOnly } from '../hooks';
 import { api } from '../api';
 import { useStore } from '../store';
 import { shortcutLabel } from '../keys';
 
-export function Header() {
+export interface ReviewHeaderContext {
+  navigation: ReactNode;
+  actions: ReactNode;
+  notices: ReactNode;
+}
+
+export function Header({ context }: { context?: ReviewHeaderContext }) {
   const review = usePr(); const pr = review.data; const comments = useComments().data;
   const drafts = comments?.drafts.length ?? 0; const files = useFiles().data ?? [];
   const { setOverlay, range, setRange, activePanel, setActivePanel } = useStore(); const invalidate = useInvalidate();
   const readOnly = useRangeReadOnly();
-  if (!pr) return <header className="hdr" data-testid="header"><div className="workspace-bar"><strong className="brand">Criever</strong><span role="status">{review.error ? 'Review could not load' : 'Loading review workspace…'}</span></div></header>;
+  if (!pr) return <header className="hdr" data-testid="header">{context?.navigation}<div className="workspace-bar">{!context && <strong className="brand">Criever</strong>}<span role="status">{review.error ? 'Review could not load' : 'Loading review workspace…'}</span></div>{context?.notices}</header>;
   const local = pr.kind === 'local';
   const provider = pr.kind === 'github' ? 'GitHub' : 'Bitbucket';
   const newCommits = !local && pr.lastSeenHead && pr.lastSeenHead !== pr.sourceHead ? pr.commits.findIndex(c => c.hash === pr.lastSeenHead) : 0;
   const dismiss = async () => { await api.seen(); invalidate(); };
   return (
     <header className="hdr" data-testid="header">
-      <div className="workspace-bar">
+      {context?.navigation ?? <div className="workspace-bar">
         <span className="brand"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18" /></svg>Criever</span>
         <span className="workspace-divider" aria-hidden="true">/</span>
         {!local && <span className="repo" data-testid="header/repo" title={pr.url ?? ''}>{pr.url?.replace(/^https?:\/\/(?:bitbucket\.org|github\.com)\//, '').split('/').slice(0, 2).join(' / ')}</span>}
         <span className="workspace-kind">{local ? 'Local review' : `${provider} review`}</span>
         <span className="workspace-note">{local ? 'Comments stay on this machine' : 'Drafts stay private until published'}</span>
-      </div>
+      </div>}
       <div className="review-bar">
         <div className="hdr-left">
           <div className="review-heading">
@@ -33,6 +40,7 @@ export function Header() {
           <button className="overview-link" onClick={() => setOverlay('overview')}>Overview &amp; {pr.commits.length} commit{pr.commits.length === 1 ? '' : 's'}</button>
         </div>
         <div className="review-actions">
+          {context?.actions}
           <span className="drafts" data-testid="header/draftCount">{drafts} draft{drafts === 1 ? '' : 's'}</span>
           <button className="btn primary" data-testid="header/publishButton" disabled={drafts === 0} title={local ? 'Save drafts as local review comments' : `Review drafts before publishing to ${provider}`} onClick={() => setOverlay('publish')}>{local ? 'Save' : 'Publish'}</button>
         </div>
@@ -53,6 +61,7 @@ export function Header() {
           <button className="btn sm ghost" onClick={() => setOverlay('keys')}>Shortcuts <kbd>?</kbd></button>
         </nav>
       </div>
+      {context?.notices}
       <div className="review-notices">
         {!local && newCommits > 0 && (
           <span className="banner" data-testid="header/newCommitsBanner">{newCommits} new commit{newCommits > 1 ? 's' : ''} since your last visit

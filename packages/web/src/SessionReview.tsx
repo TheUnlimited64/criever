@@ -43,27 +43,33 @@ function SessionContents({ session }: { readonly session: WorkspaceSession }) {
     const composerText = [...document.querySelectorAll<HTMLTextAreaElement>('.composer textarea')].some(input => input.value.trim().length > 0);
     if (composerText && !window.confirm('Leave this review? Unsaved composer text will be lost. Saved drafts will remain available.')) event.preventDefault();
   };
-  return <div className="session-shell">
-    <div className="session-top">
-      <nav className="desk-nav" aria-label="Workspace navigation">
-        <a className="brand" href="/" onClick={leave}>Criever</a><span aria-hidden="true">/</span><a href="/" onClick={leave}>Projects</a>
-        <span aria-hidden="true">/</span><a className="desk-crumb" data-testid="workspace/back-project" href={projectHref(session.projectId)} onClick={leave}>Back to {project?.name ?? 'project'}</a>
-        <span className="desk-crumb" aria-current="page">Review #{session.prId}</span>
-        <div className="session-actions">
-          <button className="btn sm" data-testid="workspace/session-reviewed" disabled={busy || !pr || reviewed} title="Local tracking only, not provider approval" onClick={() => { void mark(sourceHead); }}>{busy ? 'Saving…' : reviewed ? 'Reviewed locally' : 'Mark reviewed'}</button>
-          {acknowledged && <button className="btn sm ghost" data-testid="workspace/session-clear-reviewed" disabled={busy} onClick={() => { void mark(null); }}>Clear reviewed</button>}
+  return <App headerContext={{
+    navigation: <nav className="workspace-bar session-nav" aria-label="Workspace navigation">
+      <a className="brand" href="/" onClick={leave}>Criever</a>
+      <span aria-hidden="true">/</span><a href="/" onClick={leave}>Projects</a>
+      <span aria-hidden="true">/</span><a className="desk-crumb" data-testid="workspace/back-project" href={projectHref(session.projectId)} onClick={leave}>{project?.name ?? 'Project'}</a>
+      <details className="session-details">
+        <summary>Review details</summary>
+        <div className="session-details-content">
+          <p>Review markers are local only · source <code>{sourceHead.slice(0, 7)}</code></p>
+          <div className="session-location" data-testid="workspace/session-location">
+            <span>{session.checkoutTarget === 'temporary' ? 'Temporary checkout' : 'Actual repository'}</span>
+            <code>{session.checkoutPath}</code>
+          </div>
+          <p>Drafts stay private until published.</p>
         </div>
-      </nav>
-      <div className="session-message" role="status">{notice || `Review markers are local only · source ${sourceHead.slice(0, 7)}`}</div>
+      </details>
+    </nav>,
+    actions: <>
+      <button className="btn sm" data-testid="workspace/session-reviewed" disabled={busy || !pr || reviewed} title="Local tracking only, not provider approval" onClick={() => { void mark(sourceHead); }}>{busy ? 'Saving…' : reviewed ? 'Reviewed locally' : 'Mark reviewed'}</button>
+      {acknowledged && <button className="btn sm ghost" data-testid="workspace/session-clear-reviewed" disabled={busy} onClick={() => { void mark(null); }}>Clear reviewed</button>}
+    </>,
+    notices: <div className="session-notices">
+      {notice && <div className="session-message" role="status">{notice}</div>}
       {tracked && <div className="session-message" data-testid="workspace/session-recheck"><RecheckReasons pr={tracked} /></div>}
-      <div className="session-message session-location" data-testid="workspace/session-location">
-        <span>{session.checkoutTarget === 'temporary' ? 'Temporary checkout' : 'Actual repository'}</span>
-        <code>{session.checkoutPath}</code>
-      </div>
       {error && <WorkspaceError error={error.error} retry={() => { void mark(error.head); }} />}
       {prQuery.error && <WorkspaceError error={prQuery.error} retry={() => { void prQuery.refetch(); }} />}
       {workspace.error && <WorkspaceError error={workspace.error} retry={() => { void workspace.refetch(); }} />}
-    </div>
-    <App />
-  </div>;
+    </div>,
+  }} />;
 }
