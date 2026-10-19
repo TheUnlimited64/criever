@@ -20,6 +20,7 @@ test('two reviews finish independently while chat stays usable and every result 
   await expect(page.getByRole('button', { name: 'Run AI review' })).toBeEnabled();
   await page.getByRole('button', { name: 'Run AI review' }).click();
   await expect(page.getByText('2 reviews running')).toBeVisible();
+  await page.getByRole('tab', { name: 'Chat', exact: true }).click();
   await page.getByLabel('General question').fill('Render markdown while reviewing');
   await page.getByRole('button', { name: 'Ask AI', exact: true }).click();
   await expect(page.getByTestId('ai/general-messages').locator('strong')).toContainText('bold answer');

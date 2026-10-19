@@ -61,11 +61,19 @@ export function ReviewCodePane() {
       key: `ai-finding-${item.id}`, afterLine: { side: item.side, line: item.line },
        node: <AiFindingCard finding={item} harnessId={ai.data?.harnesses.find(harness => harness.id === s.selectedHarnessId)?.id ?? ai.data?.harnesses[0]?.id ?? ''} onChange={refreshAi} />,
     }));
+    const completedIds = new Set(ai.data?.reviewRuns?.map(run => run.id));
+    const provisional = (aiAtHead ? ai.data?.activeReviews ?? [] : []).filter(run => !completedIds.has(run.id)).flatMap(run => [
+      ...run.findings.map(item => ({ ...item, label: `Provisional finding · ${item.severity}` })),
+      ...run.lookouts.map(item => ({ ...item, label: 'Provisional look-out' })),
+    ].flatMap(item => item.anchorCommit === pr?.sourceHead && item.path === path && item.line != null && item.side ? [{
+      key: `ai-provisional-${item.id}`, afterLine: { side: item.side, line: item.line },
+      node: <div className="ai-guidance ai-provisional" data-testid={`ai/provisional/${item.id}`}><strong>{item.label}</strong><p>{item.body}</p><small>{run.status === 'incomplete' ? 'Review incomplete' : run.status === 'failed' ? 'Review failed' : 'Review in progress'} · not available for approval.</small></div>,
+    }] : []));
     const contextualThreads = Object.entries(aiAtHead ? ai.data?.threads ?? {} : {}).flatMap(([threadId, messages]) => {
       const anchor = threadAnchor(threadId);
       return anchor?.path === path && !s.closedAiThreads.includes(threadId) ? [{ key: `ai-thread-${threadId}`, afterLine: { side: anchor.side, line: anchor.line }, node: <AiThreadCard threadId={threadId} messages={messages} /> }] : [];
     });
-    return [...th, ...dr, ...cm, ...guidance, ...findings, ...contextualThreads];
+    return [...th, ...dr, ...cm, ...guidance, ...findings, ...provisional, ...contextualThreads];
   }, [c, path, pr?.sourceHead, s.composer, s.selectedHarnessId, s.closedAiThreads, editing, invalidate, local, ai.data, aiAtHead, composerMode, close, refreshAi]);
 
   const unanchored = useMemo(() => {

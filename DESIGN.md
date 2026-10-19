@@ -238,3 +238,21 @@ Mixed existing strategy: panel/background tonal separation, one-pixel borders on
 ## 8. Accessibility Constraints & Accepted Debt
 
 Target WCAG 2.2 AA for newly added controls: explicit labels, keyboard operation, visible focus, readable light/dark contrast, reduced-motion support, and text wrapping for unbroken code/path content. The primary persona is a reviewer scanning code at desktop width; the constrained persona is a narrow-viewport or keyboard-only reviewer who cannot discover hover-only actions. Both must reach the line and file composer without guessing. No new accepted debt. Existing small metadata typography and narrow-screen hidden comment rail are inherited and not changed by this issue.
+
+
+### AI workbench reading layout
+
+The workbench reserves only a compact title, harness/run toolbar, and Chat/Findings
+switch above its reading area. Starting a review selects Findings; later responses
+never switch tabs or clear an unsent question. The desktop AI column is 360–460px,
+while narrower screens use a bounded overlay.
+
+There is one scroll owner for diagnostics and results. Run explanations start
+collapsed behind a labelled Details disclosure; expanding even a very long
+incomplete-review explanation must not reduce the reading viewport. Chat alone has
+a compact pinned composer. Findings have no composer or repeated setup card.
+
+AI results appear near the top of Comments, before existing discussion groups.
+Incomplete and running results also appear there and beside their changed lines,
+explicitly marked provisional. They have no approval action. The same result IDs
+are replaced by completed state without duplicating a run when completion arrives.

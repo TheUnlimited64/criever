@@ -63,6 +63,7 @@ test('an incomplete review shows its limitation without saving a clean run', asy
   await page.getByTestId('header').getByRole('button', { name: 'AI', exact: true }).click();
   await page.getByLabel('AI harness').selectOption('fixture-incomplete');
   await page.getByRole('button', { name: 'Run AI review' }).click();
+  await page.getByTestId('ai/review-status').locator('summary').click();
   await expect(page.getByRole('alert')).toContainText('A required caller was unavailable');
   await expect(page.getByTestId('ai/review-result')).toHaveCount(0);
   await page.reload();
@@ -167,6 +168,7 @@ test('review and private questions show visible working states while the harness
   let resumeChat = () => {};
   const chatPending = new Promise<void>(resolve => { resumeChat = resolve; });
   await page.route('**/api/ai/chat', async route => { await chatPending; await route.continue(); });
+  await page.getByRole('tab', { name: 'Chat', exact: true }).click();
   await page.getByLabel('General question').fill('What changed?');
   await page.getByRole('button', { name: 'Ask AI', exact: true }).click();
   await expect(page.getByRole('status', { name: 'Thinking about your question' })).toBeVisible();

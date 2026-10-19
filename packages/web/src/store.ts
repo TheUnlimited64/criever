@@ -35,7 +35,7 @@ interface S {
   cursor: { side: Side; line: number } | null; setCursor: (c: { side: Side; line: number } | null) => void;
 }
 export const useStore = create<S>((set) => ({
-  activePanel: 'code', setActivePanel: p => set({ activePanel: p }),
+  activePanel: 'code', setActivePanel: p => set({ activePanel: p, aiOpen: false }),
   currentPath: null, setCurrentPath: p => set({ currentPath: p }),
   viewMode: 'diff', fileAt: null, jumpLine: null,
   range: null, setRange: r => set({ range: r, selection: null, composer: null }),

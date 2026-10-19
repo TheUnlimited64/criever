@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AiReviewPhase } from '@criever/shared';
 import { api } from '../api';
@@ -23,6 +23,8 @@ export function AiRail() {
   const [chatBusy, setChatBusy] = useState(false);
   const [reviewing, setReviewing] = useState(0);
   const [tab, setTab] = useState<'chat' | 'findings'>('chat');
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { scrollRef.current?.scrollTo(0, 0); }, [tab]);
   const [error, setError] = useState('');
   const state = query.data;
   const runs = state?.reviewRuns ?? [];
@@ -50,7 +52,7 @@ export function AiRail() {
   };
   const review = async () => {
     if (!id) return;
-    setReviewing(count => count + 1); setError('');
+    setReviewing(count => count + 1); setError(''); setTab('findings');
     try {
       await api.aiReview(id);
       await refresh();
@@ -69,22 +71,40 @@ export function AiRail() {
     setAiOpen(false);
   };
 
+  const navigateTabs = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 'chat' : event.key === 'End' ? 'findings' : tab === 'chat' ? 'findings' : 'chat';
+    setTab(next);
+    document.getElementById(`ai-${next}-tab`)?.focus();
+  };
+
   return <aside className="pane rail ai-rail" data-testid="ai-rail">
-    <div className="pane-hd ai-rail-head"><span><strong>AI workbench</strong><small>Private to this review</small></span><button className="btn sm ghost" aria-label="Close AI chat" onClick={() => setAiOpen(false)}>Close</button></div>
-    <div className="ai-rail-tabs" role="tablist" aria-label="AI workbench">
-      <button type="button" role="tab" aria-selected={tab === 'chat'} aria-controls="ai-chat-panel" onClick={() => setTab('chat')}>Chat</button>
-      <button type="button" role="tab" aria-selected={tab === 'findings'} aria-controls="ai-findings-panel" onClick={() => setTab('findings')}>Findings <span className="ai-tab-count">{resultCount}</span></button>
+    <div className="ai-rail-head"><span><strong>AI review</strong><small>Private · drafts need your approval</small></span><button className="btn sm ghost" aria-label="Close AI chat" onClick={() => setAiOpen(false)}>Close</button></div>
+    <div className="ai-rail-tools">
+      <label className="sr-only" htmlFor="ai-harness">AI harness</label>
+      <select id="ai-harness" value={id} onChange={event => setSelectedHarnessId(event.target.value)} disabled={!state?.harnesses.length}>
+        {!state?.harnesses.length && <option value="">No harness configured</option>}
+        {state?.harnesses.map(harness => <option value={harness.id} key={harness.id}>{harness.name}</option>)}
+      </select>
+      <button className="btn sm" disabled={!id} onClick={review}>Run AI review</button>
     </div>
-    <div className="ai-rail-setup"><label className="ai-label">Harness<select aria-label="AI harness" className="btn sm" value={id} onChange={event => setSelectedHarnessId(event.target.value)}>{state?.harnesses.map(harness => <option value={harness.id} key={harness.id}>{harness.name}</option>)}</select></label>
+    <div className="ai-rail-tabs" role="tablist" aria-label="AI workbench" onKeyDown={navigateTabs}>
+      <button type="button" id="ai-chat-tab" role="tab" tabIndex={tab === 'chat' ? 0 : -1} aria-selected={tab === 'chat'} aria-controls="ai-chat-panel" onClick={() => setTab('chat')}>Chat</button>
+      <button type="button" id="ai-findings-tab" role="tab" tabIndex={tab === 'findings' ? 0 : -1} aria-selected={tab === 'findings'} aria-controls="ai-findings-panel" onClick={() => setTab('findings')}>Findings <span className="ai-tab-count">{resultCount}</span></button>
+    </div>
+    <div className="ai-scroll" ref={scrollRef} data-testid="ai/scroll">
       {state && !state.harnesses.length && <p className="ai-empty ai-configure"><strong>Configure a local AI harness</strong><br />Add a signed-in CLI or any ACP-compatible agent to <code>~/.config/criever/config.json</code>.</p>}
-      <div className="ai-review-action"><span>Review this diff<small>Findings stay private until you approve them.</small></span><button className="btn sm" disabled={!id} onClick={review}>Run AI review</button></div>
-       {(reviewing > 0 || liveReviews.length > 0) && <div role="status" className="ai-review-progress"><AiActivity label="Reviewing changes" /><span>{liveReviews.length || reviewing} {(liveReviews.length || reviewing) === 1 ? 'review' : 'reviews'} running</span></div>}
-       {liveReviews.map(review => <div className="ai-review-result" data-testid="ai/review-status" role="status" key={review.id}><strong>{phaseLabel(review.status)} · {review.harnessId}</strong><span>{review.message ?? 'Working through the review'}</span></div>)}
-       {activeReviews.filter(review => !isLive(review.status)).map(review => <div className={`ai-review-result ai-review-${review.status}`} data-testid="ai/review-status" role={review.status === 'failed' || review.status === 'incomplete' ? 'alert' : 'status'} key={review.id}><strong>{phaseLabel(review.status)}</strong><span>{review.error ?? review.message ?? 'No final result was persisted.'}</span></div>)}
-       {runs.length > 0 && <div className="ai-review-result" data-testid="ai/review-result" role="status"><strong>Review complete</strong><span>{state?.findings.length || state?.lookouts.length ? `${runs.length} ${runs.length === 1 ? 'review' : 'reviews'} · ${state?.findings.length ?? 0} findings · ${state?.lookouts.length ?? 0} look-outs. Nothing was published.` : 'No findings or look-outs. Nothing was published.'}</span></div>}
-    </div>
-    {error && <p role="alert" className="ai-error">{error}</p>}
-    <div className="ai-content" id="ai-chat-panel" role="tabpanel" hidden={tab !== 'chat'}>
+      {(reviewing > 0 || liveReviews.length > 0) && <div role="status" className="ai-review-progress"><AiActivity label="Reviewing changes" /><span>{liveReviews.length || reviewing} {(liveReviews.length || reviewing) === 1 ? 'review' : 'reviews'} running</span></div>}
+      <div className="ai-run-notices">
+        {activeReviews.map(review => <details className={`ai-run-notice ai-review-${review.status}`} data-testid="ai/review-status" key={review.id}>
+          <summary><strong>{phaseLabel(review.status)}</strong><span>{review.harnessId}</span><span className="ai-details-label">Details</span></summary>
+          <div role={review.status === 'failed' || review.status === 'incomplete' ? 'alert' : 'status'}>{review.error ?? review.message ?? 'No final result was persisted.'}</div>
+        </details>)}
+        {runs.length > 0 && <div className="ai-completion" data-testid="ai/review-result" role="status"><strong>Review complete</strong><span>{state?.findings.length || state?.lookouts.length ? `${runs.length} ${runs.length === 1 ? 'review' : 'reviews'} · ${state?.findings.length ?? 0} findings · ${state?.lookouts.length ?? 0} look-outs. Nothing was published.` : 'No findings or look-outs. Nothing was published.'}</span></div>}
+      </div>
+      {error && <p role="alert" className="ai-error">{error}</p>}
+    <div className="ai-content" id="ai-chat-panel" role="tabpanel" aria-labelledby="ai-chat-tab" hidden={tab !== 'chat'}>
       <section className="ai-conversation"><h3>Conversation</h3>
         {!general.length && <p className="ai-empty">Ask a question about this review. Your conversation stays here, not in the published review.</p>}
         <div data-testid="ai/general-messages">{general.map((message, index) => <AiMessageView message={message} key={`${message.role}-${index}`} />)}</div>
@@ -102,9 +122,10 @@ export function AiRail() {
         })}
       </section>
     </div>
-     <div className="ai-content" id="ai-findings-panel" role="tabpanel" hidden={tab !== 'findings'}><AiResultsList runs={runs} findings={state?.findings ?? []} lookouts={state?.lookouts ?? []} activeReviews={activeReviews} /></div>
+     <div className="ai-content" id="ai-findings-panel" role="tabpanel" aria-labelledby="ai-findings-tab" hidden={tab !== 'findings'}><AiResultsList runs={runs} findings={state?.findings ?? []} lookouts={state?.lookouts ?? []} activeReviews={activeReviews} /></div>
+    </div>
     <div className="ai-rail-composer" hidden={tab !== 'chat'}><label className="ai-label">General question<textarea aria-label="General question" placeholder="Ask about the whole review…" value={question} onChange={event => { questionVersion.current++; setQuestion(event.target.value); }} /></label>
-      <button className="btn primary sm" disabled={chatBusy || !id || !question.trim()} onClick={chat}>Ask AI</button><small>Private conversation · nothing is published</small></div>
+      <div className="ai-composer-footer"><small>Private conversation</small><button className="btn primary sm" disabled={chatBusy || !id || !question.trim()} onClick={chat}>Ask AI</button></div></div>
   </aside>;
 }
 
