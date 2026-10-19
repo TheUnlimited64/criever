@@ -55,7 +55,7 @@ export function Overview() {
             </div>
             <div className="ov-sub">{pr.author} · <code>{pr.sourceBranch}</code> → <code>{pr.destinationBranch}</code></div>
           </div>
-          {pr.url && <a className="btn sm" data-testid="overview/link" href={pr.url} target="_blank" rel="noreferrer">Open in Bitbucket ↗</a>}
+          {!local && pr.url && <a className="btn sm" data-testid="overview/link" href={pr.url} target="_blank" rel="noreferrer">Open in {pr.kind === 'github' ? 'GitHub' : 'Bitbucket'} ↗</a>}
         </div>
 
         <div className="ov-body">

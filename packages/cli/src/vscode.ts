@@ -21,7 +21,7 @@ export function openUrl(port: number, repoRoot: string, path: string, line: numb
 }
 
 export function createVscode(o: {
-  repoRoot: string; cacheDir: string; log: (s: string) => void; version?: string;
+  repoRoot: string; cacheDir: string; log: (s: string) => void; version?: string; dataDir?: string;
   downloadUrl?: (v: string, tag: string) => string; spawn?: typeof Bun.spawn; fetch?: typeof fetch; waitForPort?: (port: number) => Promise<void>;
 }) {
   const version = o.version ?? VSCODE_VERSION, spawn = o.spawn ?? Bun.spawn, fetchFn = o.fetch ?? fetch;
@@ -54,7 +54,7 @@ export function createVscode(o: {
     if (starting) return starting;
     starting = (async () => {
       await ensureInstalled();
-      proc = spawn([bin, '--host', '127.0.0.1', '--port', '0', '--without-connection-token', '--server-data-dir', join(o.cacheDir, 'vscode-data'), '--default-folder', o.repoRoot], { stdout: 'pipe', stderr: 'pipe' });
+      proc = spawn([bin, '--host', '127.0.0.1', '--port', '0', '--without-connection-token', '--server-data-dir', o.dataDir ?? join(o.cacheDir, 'vscode-data'), '--default-folder', o.repoRoot], { stdout: 'pipe', stderr: 'pipe' });
       const reader = (proc.stdout as ReadableStream<Uint8Array>).getReader(); let buf = '';
       for (;;) {
         const { value, done } = await reader.read(); if (done) throw new Error('openvscode-server exited before printing its port');

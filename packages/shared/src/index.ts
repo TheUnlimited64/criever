@@ -1,4 +1,7 @@
 export type Side = 'old' | 'new';
+export type { WorkspaceFolders, WorkspaceProject, WorkspacePullRequest, WorkspaceSession, WorkspaceSnapshot } from './workspace';
+export { deriveReview, describeRecheck, discussionThrough, timeOf } from './review';
+export type { DiscussionItem, RecheckReason, ReviewDecision, ReviewDerivation, ReviewSignals } from './review';
 export type FileStatus = 'A' | 'M' | 'D' | 'R';
 
 export interface DiffLine { kind: 'context' | 'add' | 'del'; oldNo: number | null; newNo: number | null; text: string }
@@ -16,7 +19,7 @@ export interface Draft {
   // draft is, and lets the sheet show where the draft came from.
   sourceLocalId?: number; author?: 'me' | 'agent'; agentName?: string;
 }
-export interface Anchor { path: string; line: number; side: Side; anchorCommit: string; source: 'criever' | 'inferred' }
+export interface Anchor { path: string; line: number; side: Side; anchorCommit: string; source: 'criever' | 'inferred' | 'provider' }
 export interface PrState {
   drafts: Draft[];
   anchors: Record<number, Anchor>;
@@ -58,7 +61,7 @@ export interface LocalReview {
 export interface PrCommit { hash: string; date: string; message: string }
 export interface PrInfo {
   id: number; title: string; url: string | null; author: string; description: string | null;
-  kind: 'bitbucket' | 'local';
+  kind: 'bitbucket' | 'github' | 'local';
   sourceBranch: string; destinationBranch: string;
   sourceHead: string; destinationHead: string; mergeBase: string;
   commits: PrCommit[];
@@ -80,6 +83,11 @@ export interface BbComment {
   author: { name: string; initials: string; isMe: boolean };
   createdOn: string; body: string; resolved: boolean; deleted: boolean;
   inline: { path: string; from: number | null; to: number | null } | null;
+  filePath?: string;
+  canResolve?: boolean;
+  canReply?: boolean;
+  /** Exact provider-supplied original position, before subsequent PR updates. */
+  anchor?: Anchor;
 }
 export interface Thread {
   root: BbComment; replies: BbComment[];

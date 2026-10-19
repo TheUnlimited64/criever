@@ -10,14 +10,15 @@ import { ThreadCard } from './ThreadCard';
 
 /** A thread card with its Reply/Resolve wiring, usable anywhere a thread needs to be fully
  *  interactive — not just under its line in the code pane. Every thread returned by the API must
- *  be reachable and resolvable, including ones with no line to render under.
+ *  be reachable, including ones with no line to render under. Resolve is offered only when
+ *  the provider supports it for this comment.
  *  Takes `draftReplies` as a prop rather than calling useComments() itself: this mounts fresh
  *  per thread whenever a file's extras are rebuilt, and an extra query observer per card would
  *  fire its own background refetch (default staleTime 0) right when the diff fetch also needs
  *  to land — the caller already has the same `comments` data from its own subscription. */
 export function ThreadCardFull({ thread, draftReplies }: { thread: Thread; draftReplies: Draft[] }) {
   const s = useStore();
-  const local = usePr().data?.kind === 'local';
+  const kind = usePr().data?.kind; const local = kind === 'local';
   const invalidate = useInvalidate();
   const qc = useQueryClient();
   const [editing, setEditing] = useState<string | null>(null);
@@ -28,15 +29,15 @@ export function ThreadCardFull({ thread, draftReplies }: { thread: Thread; draft
     qc.setQueryData<CommentsResponse>(['comments'], old => old && {
       ...old, threads: old.threads.map(t => t.root.id === id ? { ...t, root: { ...t.root, resolved: true } } : t),
     });
-    try { await api.resolve(id); invalidate(); s.showToast(local ? 'Resolved in this local review' : 'Resolved on Bitbucket'); }
+    try { await api.resolve(id); invalidate(); s.showToast(local ? 'Resolved in this local review' : `Resolved on ${kind === 'github' ? 'GitHub' : 'Bitbucket'}`); }
     catch (e) { qc.setQueryData(['comments'], prev); void qc.invalidateQueries({ queryKey: ['comments'] }); s.showToast(`Resolve failed: ${(e as Error).message}`); }
   };
 
   return (
     <ThreadCard thread={thread} footer={<>
       <span className="grow" />
-      <button className="btn sm" data-testid={`thread/${thread.root.id}/reply`} onClick={() => setReplying(true)}>Reply</button>
-      {!thread.root.resolved && <button className="btn sm primary" data-testid={`thread/${thread.root.id}/resolve`} onClick={() => resolve(thread.root.id)}>Resolve</button>}
+      {thread.root.canReply !== false && <button className="btn sm" data-testid={`thread/${thread.root.id}/reply`} onClick={() => setReplying(true)}>Reply</button>}
+      {!thread.root.resolved && thread.root.canResolve !== false && <button className="btn sm primary" data-testid={`thread/${thread.root.id}/resolve`} onClick={() => resolve(thread.root.id)}>Resolve</button>}
     </>}>
       <SinceDiff thread={thread} />
       {draftReplies.map(d => (

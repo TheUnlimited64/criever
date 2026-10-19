@@ -105,9 +105,9 @@ describe('startup', () => {
   });
 
   it('a remote that is not a supported provider still fails, rather than silently going local', async () => {
-    await sh(work, ['remote', 'set-url', 'origin', 'git@github.com:foo/bar.git']);
+    await sh(work, ['remote', 'set-url', 'origin', 'git@code.example.test:foo/bar.git']);
     try {
-      await expect(startup({ cwd: work, env: env(), fetch: fakeFetch(null), log: () => {} })).rejects.toThrow(/Not a bitbucket.org remote/);
+      await expect(startup({ cwd: work, env: env(), fetch: fakeFetch(null), log: () => {} })).rejects.toThrow(/Not a supported remote/);
     } finally {
       await sh(work, ['remote', 'set-url', 'origin', remote]);
     }

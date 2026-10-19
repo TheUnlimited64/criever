@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { Side } from '@criever/shared';
 import { api } from './api';
-import { Header } from './components/Header';
+import { Header, type ReviewHeaderContext } from './components/Header';
 import { FilesPane } from './components/FilesPane';
 import { Keymap } from './components/Keymap';
 import { ReviewCodePane } from './components/ReviewCodePane';
@@ -54,20 +54,20 @@ function useKeyboard() {
       case 'comment': if (s.cursor && s.currentPath) { s.setSelection({ side: s.cursor.side, from: s.cursor.line, to: s.cursor.line }); s.setComposer({ path: s.currentPath, ...s.cursor }); } break;
       case 'viewed': { const f = files[i]; if (f) { await api.setViewed(f.path, !f.viewed); invalidate(); } break; }
       case 'split': s.toggleSplit(); break;
-      case 'resolve': { const t = c?.threads.find(x => x.root.id === s.focusedThread); if (t && !t.root.resolved) { await api.resolve(t.root.id); invalidate(); } break; }
+      case 'resolve': { const t = c?.threads.find(x => x.root.id === s.focusedThread); if (t && !t.root.resolved && t.root.canResolve !== false) { await api.resolve(t.root.id); invalidate(); } break; }
       case 'vscode': if (s.currentPath) { try { const { url } = await api.vscodeOpen(s.currentPath, s.cursor?.line ?? 1); window.open(url, 'criever-vscode'); } catch (e) { s.showToast((e as Error).message); } } break;
     }
   }), [s, files, c, invalidate, pr]);
 }
 
-export function App() {
+export function App({ headerContext }: { headerContext?: ReviewHeaderContext }) {
   const files = useFiles(); const { currentPath, openDiff } = useStore();
   const overlay = useStore(s => s.overlay);
   useEffect(() => { if (!currentPath && files.data?.[0]) openDiff(files.data[0].path); }, [files.data, currentPath, openDiff]);
   useKeyboard();
   return (
     <div className="app">
-      <Header />
+      <Header context={headerContext} />
       <div className="main">
         <FilesPane />
         <ReviewCodePane />

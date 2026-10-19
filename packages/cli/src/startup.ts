@@ -1,13 +1,15 @@
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
-import { basename, dirname, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { BitbucketClient, BitbucketError } from './bitbucket';
-import { defaultPaths, loadCredentials } from './config';
+import { defaultPaths, loadCredentials, loadGithubCredentials } from './config';
+import { GitHubClient } from './github';
 import { UserError } from './errors';
 import { Git } from './git';
 import { LocalReviewStore } from './localreview';
 import { BitbucketProvider, rawPrToMeta } from './provider';
 import { LocalProvider } from './providers/local';
-import { parseRemote } from './remote';
+import { GitHubProvider } from './providers/github';
+import { parseRemote, remoteProvider } from './remote';
 import type { ServerDeps } from './server';
 import { StateStore } from './state';
 
@@ -33,6 +35,32 @@ export async function startup(opts: { cwd: string; env: Env; fetch?: typeof fetc
   }
   const { workspace: ws, repo } = parseRemote(url); // a remote that isn't a supported provider is still a hard error
   const branch = await git.currentBranch(); // detached HEAD is still a hard error
+
+  if (remoteProvider(url) === 'github') {
+    let creds: { token: string };
+    try {
+      creds = await loadGithubCredentials(opts.env, paths.configPath);
+    } catch (e) {
+      if (!(e instanceof UserError)) throw e;
+      return startupLocal(opts, paths, git, 'no GitHub credentials');
+    }
+    const gh = new GitHubClient({ ...creds, fetch: opts.fetch });
+    opts.log(`Looking for an open PR for ${branch} in ${ws}/${repo}…`);
+    const meta = await gh.findOpenPr(ws, repo, branch);
+    if (!meta) return startupLocal(opts, paths, git, `no open PR for ${branch} in ${ws}/${repo}`);
+    opts.log(`PR #${meta.id}: ${meta.title}`);
+    await git.fetch(remote, [`refs/pull/${meta.id}/head`, meta.destinationBranch]);
+    const mergeBase = await git.mergeBase(meta.destinationHead, meta.sourceHead);
+    const provider = new GitHubProvider(gh, ws, repo, meta.id);
+    const [comments, commits] = await Promise.all([provider.listComments(), provider.listCommits()]);
+    const store = new StateStore(StateStore.path(join(paths.stateDir, 'github'), ws, repo, meta.id));
+    await store.load();
+    if (store.warning) opts.log(store.warning);
+    const localReview = new LocalReviewStore(LocalReviewStore.path(git.root));
+    await localReview.load();
+    await carryOverLocalComments(localReview, store, meta.id);
+    return { git, store, provider, ws, repo, meta, mergeBase, comments, commits, remote, localReview };
+  }
 
   let creds: { email: string; token: string };
   try {

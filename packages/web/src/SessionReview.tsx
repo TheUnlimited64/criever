@@ -1,0 +1,75 @@
+import { useState } from 'react';
+import type { WorkspaceSession } from '@criever/shared';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { App } from './App';
+import { usePr } from './hooks';
+import { RecheckReasons, WorkspaceError } from './Workspace';
+import { projectHref, useWorkspace, workspaceApi, workspaceKey } from './workspace-api';
+
+export function SessionReview({ id }: { readonly id: string }) {
+  const session = useQuery({ queryKey: ['workspace-session', id], queryFn: () => workspaceApi.session(id), refetchOnWindowFocus: false });
+  if (!session.data) return <div className="desk-shell">
+    <nav className="desk-nav" aria-label="Workspace navigation"><a className="brand" href="/">Criever</a><a href="/">Projects</a></nav>
+    <main className="desk-scroll"><div className="desk-content">
+      <h1>{session.error ? 'Review session unavailable' : 'Opening review session…'}</h1>
+      {session.error && <><p>This session may be missing or stale. Return to your projects to prepare a new review.</p><WorkspaceError error={session.error} retry={() => { void session.refetch(); }} /><a className="btn" href="/">Return to review desk</a></>}
+    </div></main>
+  </div>;
+  return <SessionContents session={session.data} />;
+}
+
+function SessionContents({ session }: { readonly session: WorkspaceSession }) {
+  const prQuery = usePr(); const pr = prQuery.data;
+  const workspace = useWorkspace(); const qc = useQueryClient();
+  const [busy, setBusy] = useState(false); const [error, setError] = useState<{ readonly error: Error; readonly head: string | null } | null>(null);
+  const [markedHead, setMarkedHead] = useState<string | null>(null); const [notice, setNotice] = useState('');
+  const project = workspace.data?.projects.find(p => p.id === session.projectId);
+  const tracked = project?.pullRequests.find(p => p.id === session.prId);
+  const sourceHead = pr?.sourceHead ?? session.sourceHead;
+  // New discussion on an unchanged head leaves the pull request in recheck, so it can be acknowledged again.
+  const reviewed = (markedHead ?? tracked?.reviewedHead) === sourceHead && tracked?.status !== 'updated';
+  const acknowledged = (markedHead ?? tracked?.reviewedHead) != null;
+  const mark = async (head: string | null) => {
+    setBusy(true); setError(null);
+    try {
+      const next = await workspaceApi.reviewed(session.projectId, session.prId, head);
+      qc.setQueryData(workspaceKey, (old: typeof workspace.data) => old ? { ...old, projects: old.projects.map(p => p.id === next.id ? next : p) } : old);
+      setMarkedHead(head);
+      setNotice(head ? `Marked ${head.slice(0, 7)} reviewed locally. No provider approval was sent.` : 'Local review marker cleared.');
+    } catch (failure) { setError({ error: failure instanceof Error ? failure : new Error(String(failure)), head }); }
+    finally { setBusy(false); }
+  };
+  const leave = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    const composerText = [...document.querySelectorAll<HTMLTextAreaElement>('.composer textarea')].some(input => input.value.trim().length > 0);
+    if (composerText && !window.confirm('Leave this review? Unsaved composer text will be lost. Saved drafts will remain available.')) event.preventDefault();
+  };
+  return <App headerContext={{
+    navigation: <nav className="workspace-bar session-nav" aria-label="Workspace navigation">
+      <a className="brand" href="/" onClick={leave}>Criever</a>
+      <span aria-hidden="true">/</span><a href="/" onClick={leave}>Projects</a>
+      <span aria-hidden="true">/</span><a className="desk-crumb" data-testid="workspace/back-project" href={projectHref(session.projectId)} onClick={leave}>{project?.name ?? 'Project'}</a>
+      <details className="session-details">
+        <summary>Review details</summary>
+        <div className="session-details-content">
+          <p>Review markers are local only · source <code>{sourceHead.slice(0, 7)}</code></p>
+          <div className="session-location" data-testid="workspace/session-location">
+            <span>{session.checkoutTarget === 'temporary' ? 'Temporary checkout' : 'Actual repository'}</span>
+            <code>{session.checkoutPath}</code>
+          </div>
+          <p>Drafts stay private until published.</p>
+        </div>
+      </details>
+    </nav>,
+    actions: <>
+      <button className="btn sm" data-testid="workspace/session-reviewed" disabled={busy || !pr || reviewed} title="Local tracking only, not provider approval" onClick={() => { void mark(sourceHead); }}>{busy ? 'Saving…' : reviewed ? 'Reviewed locally' : 'Mark reviewed'}</button>
+      {acknowledged && <button className="btn sm ghost" data-testid="workspace/session-clear-reviewed" disabled={busy} onClick={() => { void mark(null); }}>Clear reviewed</button>}
+    </>,
+    notices: <div className="session-notices">
+      {notice && <div className="session-message" role="status">{notice}</div>}
+      {tracked && <div className="session-message" data-testid="workspace/session-recheck"><RecheckReasons pr={tracked} /></div>}
+      {error && <WorkspaceError error={error.error} retry={() => { void mark(error.head); }} />}
+      {prQuery.error && <WorkspaceError error={prQuery.error} retry={() => { void prQuery.refetch(); }} />}
+      {workspace.error && <WorkspaceError error={workspace.error} retry={() => { void workspace.refetch(); }} />}
+    </div>,
+  }} />;
+}

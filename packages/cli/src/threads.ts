@@ -2,6 +2,7 @@ import type { Anchor, AnchorStatus, BbComment, Hunk, PrCommit, Thread } from '@c
 import { reanchor } from './reanchor';
 
 export function inferAnchor(c: BbComment, commits: PrCommit[]): Anchor | null {
+  if (c.anchor) return c.anchor;
   if (!c.inline) return null;
   const side = c.inline.to == null && c.inline.from != null ? 'old' : 'new';
   const line = side === 'old' ? c.inline.from! : (c.inline.to ?? c.inline.from ?? 1);
@@ -71,9 +72,9 @@ export async function buildThreads(comments: BbComment[], anchors: Record<number
     return p;
   };
   const threads = await Promise.all(roots.map(async root => {
-    let anchor: Anchor | null = anchors[root.id] ?? null;
+    let anchor: Anchor | null = root.anchor ?? anchors[root.id] ?? null;
     if (!anchor && root.inline) { anchor = inferAnchor(root, commits); if (anchor) newAnchors[root.id] = anchor; }
-    let status: AnchorStatus | null = null; let path = anchor?.path ?? null;
+    let status: AnchorStatus | null = null; let path = anchor?.path ?? root.filePath ?? null;
     if (anchor) {
       // No anchorCommit (or a git call against it failing) must never take the whole endpoint
       // down: degrade this one comment to "same" rather than diffing an empty/bad revision.

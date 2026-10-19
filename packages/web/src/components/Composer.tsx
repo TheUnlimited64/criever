@@ -47,7 +47,7 @@ export function Composer({ target, initial = '', onSave, onCancel, placeholder }
               {FMT_BUTTONS.map(b => <button key={b.kind} type="button" className="btn sm ghost" data-testid={b.testid} title={b.title} aria-label={b.title}
                 onMouseDown={e => e.preventDefault()} onClick={() => format(b.kind)}>{b.content}</button>)}
             </div>
-            <textarea ref={ref} aria-label={where} data-testid="composer/text" value={v} onChange={e => setV(e.target.value)} placeholder={placeholder ?? `${where}. ${kind === 'local' ? 'Markdown supported. Save a draft before saving the review.' : 'Markdown, rendered by Bitbucket.'}`}
+            <textarea ref={ref} aria-label={where} data-testid="composer/text" value={v} onChange={e => setV(e.target.value)} placeholder={placeholder ?? `${where}. ${kind === 'local' ? 'Markdown supported. Save a draft before saving the review.' : `Markdown, rendered by ${kind === 'github' ? 'GitHub' : 'Bitbucket'}.`}`}
               onKeyDown={e => {
                 if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void save(); }
                 if (e.key === 'Escape') { e.preventDefault(); onCancel(); }

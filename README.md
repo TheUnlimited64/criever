@@ -1,6 +1,6 @@
 # criever
 
-criever is a local code review tool. Against a Bitbucket Cloud pull request, it runs inside your repo, finds the open PR for the checked-out branch, and serves a review UI in your browser that re-anchors existing comments when the PR moves and lets you drill into the rest of the codebase without leaving the diff — comments are drafted locally and published to Bitbucket in one batch when you're done. It also runs with no provider at all (`--local`), diffing any two git refs, which is how you hand a review back and forth with an AI agent — see "Local reviews and the agent loop" below.
+criever is a local code review tool. Against a Bitbucket Cloud or GitHub.com pull request, it runs inside your repo, finds the open PR for the checked-out branch, and serves a review UI in your browser that re-anchors existing comments when the PR moves and lets you drill into the rest of the codebase without leaving the diff — comments are drafted locally and published when you're done. It also runs with no provider at all (`--local`), diffing any two git refs, which is how you hand a review back and forth with an AI agent — see "Local reviews and the agent loop" below.
 
 ## Install
 
@@ -13,6 +13,34 @@ Requires Bun >= 1.3 and git >= 2.28.
 This runs `bun install`, `bun run build`, and symlinks `dist/criever` to `~/.local/bin/criever`. Make sure `~/.local/bin` is on your `PATH`.
 
 ## Credentials
+
+### GitHub
+
+Supply a GitHub personal access token in this order of precedence:
+
+1. `GITHUB_TOKEN`
+2. `GH_TOKEN`
+3. `github.token` in `~/.config/criever/config.json`
+
+For example:
+
+```sh
+export GITHUB_TOKEN="<github-token>"
+```
+
+or configure the file:
+
+```json
+{ "github": { "token": "<github-token>" } }
+```
+
+For a fine-grained PAT, select the repository and grant **Contents: read** and
+**Pull requests: read/write**. For a classic PAT, use **repo** for private
+repositories or **public_repo** for public repositories. Authorize the token for
+your organization's SSO as needed. criever does not implicitly use `gh auth`;
+signing into the GitHub CLI alone does not supply its credentials.
+
+### Bitbucket Cloud
 
 Supply Bitbucket credentials through environment variables:
 
@@ -33,16 +61,139 @@ Other env overrides: `BITBUCKET_API_BASE` (default `https://api.bitbucket.org/2.
 
 ## Use
 
+### Project workspace (daemon mode)
+
+Start Criever once, from any directory:
+
+```sh
+criever daemon
+# Equivalent: criever --daemon
+```
+
+The long-running process opens `http://127.0.0.1:4917`. Leave it running while
+reviewing; Ctrl+C stops it. Use `--no-open` to open the address yourself, or
+`--port <n>` to choose another port (`--port 0` picks an available port).
+It binds only to loopback, not your network interface. It runs in the foreground;
+it does not install an operating-system service.
+
+1. Choose **Add project** and start typing the repository path. Matching folders
+   on the daemon machine appear as you type, including for incomplete names such
+   as `~/pro`. Click a suggestion, or use arrow keys and Enter/Tab to complete it;
+   keep typing to navigate into subfolders. Escape dismisses suggestions without
+   closing the dialog. You can also enter an exact path directly, including `~`
+   or `~/projects/repository` for the daemon user's home directory.
+   Its GitHub.com or Bitbucket Cloud remote determines the provider. Configure
+   credentials as described above; adding a project does not clone a repository.
+2. Open a project to see its open pull requests and which request your review.
+3. Open a PR, choose **Temporary checkout** or **Actual repository**, and confirm.
+   Temporary checkout is the default: an isolated worktree in the system temporary
+   directory (`/tmp` on Linux), leaving your original checkout alone. Actual
+   repository switches your local checkout to the PR commit in detached HEAD;
+   it requires a clean working tree and stays checked out when you leave.
+   Both modes open the usual diff, comments, drafts, and publishing tools.
+4. Return to the project or Projects page whenever you need to switch context.
+   **Mark reviewed** records the revision and discussion you have seen, locally
+   only. It does not approve the PR, publish comments, or change assignments on
+   the provider. It is available from the PR list and from a review session;
+   **Clear reviewed** removes it and restores the status derived from your
+   provider activity. If new discussion arrives on an unchanged commit, the PR
+   needs a recheck again and can be acknowledged again.
+5. The daemon periodically checks for changes while it is running. Refresh
+   checks immediately; provider errors remain visible, and the last successful
+   results stay on screen rather than being presented as current.
+
+### Review filters
+
+| Filter | Shows |
+| --- | --- |
+| **All open** | Every open PR. |
+| **Assigned to me** | Every PR that lists you as a reviewer, including ones you already reviewed. |
+| **Pending** | Assigned PRs where you have no published comment, approval, changes-requested decision, or local acknowledgement. |
+| **Needs recheck** | PRs with new commits or new comments from others since your latest review activity or local acknowledgement. |
+
+Your review activity is any non-deleted comment you published (inline, reply, or
+general) and an explicit approval or changes-requested decision. Being listed as
+a participant does not count. Your own later comments, title edits, and other
+metadata changes never trigger a recheck. Each flagged card says why, using the
+provider's author and timestamp when available, and shows every reason that
+applies:
+
+- `Since your review: PR commits changed.`
+- `Since your review: New comment by Example Reviewer.` for a separate comment
+  from someone else (including a reply in a thread you did not join).
+- `Since your review: Reply in a thread you joined.`
+- `Since your review: Changes requested by Example Reviewer.` (or `Approved`)
+  for another reviewer's decision.
+
+Status and explanations come from one shared derivation, so they cannot
+disagree. A discussion-only change is never described as a code change, and an
+independent comment is never described as a reply.
+
+**Bitbucket specifics.** Bitbucket's list response omits reviewers and
+participants unless asked, so Criever requests
+`fields=+values.reviewers,+values.participants` (with the plus signs encoded)
+and fetches individual PR details if they are still missing. Your identity is the
+UUID returned by `/user`. Provider requests are made with bounded concurrency.
+
+**Initial-sync limitation.** Bitbucket does not record which commit you
+reviewed. The first time Criever sees your review activity on a PR, it compares
+commit dates with the time of that activity and then stores the reviewed
+revision. From then on head changes are detected by revision, including force
+pushes with older commit dates and across daemon restarts. A force push made
+*before* that first sync, whose commit dates are older than your review, cannot
+be detected, and a PR first synced after later commits will show those commits
+as changed. Marking reviewed locally sets an exact baseline. GitHub PRs use
+review requests and local acknowledgement only.
+
+GitHub assignments include direct review requests and team requests when the
+token can read your team memberships. If GitHub denies that lookup, only direct
+requests are identified. Bitbucket assignments use the PR's reviewer list
+matched against your account UUID.
+
+Projects and reviewed revisions survive daemon restarts in
+`CRIEVER_STATE_DIR/workspace.json` (default
+`~/.local/share/criever/workspace.json`). Review drafts retain the existing
+provider/repository/PR storage. Browser review sessions belong to the running
+daemon; after restarting, reopen the PR from its project.
+
+Only one daemon can own a state directory at a time. After an unclean exit, the
+startup error identifies `workspace.lock` and its recorded process ID; remove
+that lock only after confirming the old process has exited. Clean temporary
+worktrees are removed at shutdown; worktrees containing edits or ignored files
+are preserved and their paths are printed. Actual repository checkouts are never
+removed or automatically restored by daemon shutdown.
+
+Daemon mode selects review context in the browser, so `--local`, `--base`, and
+`--head` belong to single-repository mode, not daemon mode.
+
+### Single-repository mode
+
 ```
 cd your-repo
 criever
 ```
 
-criever resolves the Bitbucket remote as `origin` if one exists, or the single remote in the repo otherwise (it errors and names what it found if that's ambiguous). It then looks for an open PR for the currently checked-out branch and opens the review UI in your default browser.
+criever resolves the remote as `origin` if one exists, or the single remote in the repo otherwise (it errors and names what it found if that's ambiguous). Bitbucket Cloud and GitHub.com remotes are supported; GitHub accepts SSH (`git@github.com:<owner>/<repo>.git` or `ssh://git@github.com/<owner>/<repo>.git`) and HTTPS (`https://github.com/<owner>/<repo>.git`). It then looks for an open PR for the currently checked-out branch and opens the review UI in your default browser.
 
 Flags: `--port <n>` (fixed port instead of a random free one), `--no-open` (don't launch a browser), `--dev` (serve the API only, for use with `bun run dev:web` against a running Vite dev server).
 
 Or skip all of the above and review any two git refs with no provider at all — see "Local reviews and the agent loop" below.
+
+### Publishing to GitHub
+
+Create drafts in the browser, then use **Publish** to review and send them.
+GitHub root comments are published in one **COMMENT** review batch; threaded
+replies are published separately. This leaves comments rather than approving or
+requesting changes on the PR.
+
+Anchored root drafts must match the current PR head. If the head has changed
+since a draft was created, publishing rejects that stale draft: remove it and
+recreate it against the current head before publishing again. Editing only its
+text does not refresh its anchor. The publish sheet shows API failures and keeps
+unsent comments as drafts.
+
+GitHub review threads support replies and resolution. PR conversation comments are
+shown read-only, with no Reply or Resolve action, and ignore the `r` shortcut.
 
 ### Keyboard
 
@@ -106,7 +257,7 @@ The header shows `local review · <base>..<head>` instead of a PR title, and the
 
 ### Flow A — the agent reviews, you gate what goes out
 
-The agent inspects the diff and writes its findings as comments; you read them in the UI next to the diff, delete the noise, edit the wording, reply where you disagree, and publish the survivors to the real PR. The agent never talks to Bitbucket.
+The agent inspects the diff and writes its findings as comments; you read them in the UI next to the diff, delete the noise, edit the wording, reply where you disagree, and publish the survivors to the real PR. The agent never talks to Bitbucket or GitHub.
 
 ```
 $ criever --local --no-open --port 4818 &
@@ -181,7 +332,15 @@ A few lines in your agent's instructions are enough:
 
 ## Where state lives
 
-Drafts, viewed status, and re-anchored comment positions are saved per PR at `~/.local/share/criever/<workspace>/<repo>/pr-<id>.json`. Nothing is written to the git repo. If a state file is corrupt it's moved aside to `.bak`, criever starts with empty state, and the UI shows a warning banner.
+Drafts, viewed status, and re-anchored comment positions are saved per PR:
+
+- Bitbucket: `~/.local/share/criever/<workspace>/<repo>/pr-<id>.json`
+- GitHub: `~/.local/share/criever/github/<owner>/<repo>/pr-N.json`, where `N` is the PR number.
+
+`CRIEVER_STATE_DIR` overrides the state root. GitHub state is namespaced separately
+from Bitbucket state. Nothing is written to the git repo for provider reviews.
+If a state file is corrupt it's moved aside to `.bak`, criever starts with empty
+state, and the UI shows a warning banner.
 
 ## VS Code escape hatch
 
@@ -200,14 +359,15 @@ Tests: `bun run test` (per-package Vitest) and Playwright e2e in `packages/web/e
 
 | Message | What to do |
 |---|---|
-| resolved remote not bitbucket.org | The named remote's URL isn't a bitbucket.org URL. Point it at your Bitbucket Cloud repo. |
-| No git remotes / no remote named "origin" (several found) | Add one (`git remote add origin git@bitbucket.org:<workspace>/<repo>.git`) or rename the Bitbucket one to `origin` (`git remote rename <name> origin`). |
+| Unsupported remote host | Use a Bitbucket Cloud or GitHub.com remote, not a GitHub Enterprise host. |
+| No git remotes / no remote named "origin" (several found) | Add a supported remote (for example `git remote add origin git@github.com:<owner>/<repo>.git`) or rename the intended one to `origin` (`git remote rename <name> origin`). |
 | HEAD is detached | Check out the PR branch first. |
 | No open PR for `<branch>` in `<ws>/<repo>` | Push the branch and open a PR, or check out the branch that has one. |
-| 401 / 403 | Your `ATLASSIAN_API_TOKEN` / `ATLASSIAN_USER_EMAIL` are wrong or missing, or the config file at the printed path is wrong. |
+| 401 / 403 | For GitHub, check the token selected by `GITHUB_TOKEN`, `GH_TOKEN`, then config, its repository permissions/scopes, and SSO authorization. For Bitbucket, check `ATLASSIAN_API_TOKEN` / `ATLASSIAN_USER_EMAIL` or the config file at the printed path. |
 | 429 | criever waits once for the `Retry-After` period, then fails with a message if Bitbucket is still rate-limiting. |
 | git fetch failed | git's own stderr is printed verbatim; fix whatever git is complaining about (network, auth, ref). |
-| Publish partial failure | The publish sheet stays open; the failed row is red with the API's message, earlier rows already published, later rows remain drafts. Fix and retry. |
+| Publish partial failure | The publish sheet stays open; failed rows show the API's message. Successful comments are already published; failed and unsent comments remain drafts. Fix and retry. |
+| Stale GitHub root draft | Remove and recreate the anchored draft against the current PR head. Editing the text alone does not refresh its anchor. |
 | Resolve failed | The optimistic UI change is rolled back and a toast shows the error. |
 | State file corrupt | It's renamed to `.bak`, criever starts with empty state for that PR, and a warning banner explains it. |
 | VS Code download failed | A toast shows the download URL and cache path; fetch the tarball manually into that path if your network blocks GitHub releases. |

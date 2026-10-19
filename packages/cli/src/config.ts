@@ -22,3 +22,13 @@ export async function loadCredentials(env: Env, configPath: string): Promise<{ e
   } catch { /* fall through */ }
   throw new UserError(`No Bitbucket credentials.\nProvide ATLASSIAN_USER_EMAIL and ATLASSIAN_API_TOKEN, or configure ${configPath}.`);
 }
+
+export async function loadGithubCredentials(env: Env, configPath: string): Promise<{ token: string }> {
+  const token = env.GITHUB_TOKEN || env.GH_TOKEN;
+  if (token) return { token };
+  try {
+    const j = JSON.parse(await readFile(configPath, 'utf8'));
+    if (typeof j.github?.token === 'string' && j.github.token) return { token: j.github.token };
+  } catch { /* fall through, like Bitbucket configuration */ }
+  throw new UserError(`No GitHub credentials.\nProvide GITHUB_TOKEN or GH_TOKEN, or configure github.token in ${configPath}.`);
+}
