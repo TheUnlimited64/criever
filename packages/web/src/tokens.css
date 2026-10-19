@@ -262,6 +262,7 @@ table.diff { border-collapse: collapse; width: 100%; font: var(--text-sm)/var(--
 .item { display: grid; grid-template-columns: var(--space-2) minmax(0, 1fr); gap: var(--space-2); width: 100%; text-align: left; padding: var(--space-3) var(--space-2); border-radius: var(--radius-md); align-items: start; }
 .item.av { grid-template-columns: var(--space-2) var(--avatar-size) minmax(0, 1fr); }
 .item:hover { background: var(--panel-2); } .item .pip { margin-top: var(--space-2); }
+.item[aria-current="true"] { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 .item-card { padding: var(--space-1) 0 var(--space-2); }
 .item .loc { display: block; font-family: var(--font-code); font-size: var(--text-xs); color: var(--ink-3); overflow-wrap: anywhere; }
 .item .txt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--ink); overflow-wrap: anywhere; }

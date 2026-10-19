@@ -35,3 +35,28 @@ test('resolved thread renders collapsed and expands on toggle', async ({ page })
   await expect(card).not.toHaveClass(/collapsed/);
   await expect(card.getByTestId('thread/305/body')).toBeVisible();
 });
+
+test('rail keeps its position and marks the current comment across file changes', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 600 });
+  await page.goto('/');
+  const rail = page.getByTestId('comments');
+  const first = page.getByTestId('comments/item/304');
+  await first.scrollIntoViewIfNeeded();
+  const scrollTop = await rail.evaluate(el => el.scrollTop);
+  expect(scrollTop).toBeGreaterThan(0);
+  await first.click();
+  await expect(first).toHaveAttribute('aria-current', 'true');
+  await expect(page.getByTestId('thread/304')).toBeInViewport();
+  await expect(first).toBeFocused();
+  expect(await rail.evaluate(el => el.scrollTop)).toBe(scrollTop);
+
+  const next = page.getByTestId('comments/item/305');
+  await next.scrollIntoViewIfNeeded();
+  const nextScrollTop = await rail.evaluate(el => el.scrollTop);
+  await next.click();
+  await expect(next).toHaveAttribute('aria-current', 'true');
+  await expect(first).not.toHaveAttribute('aria-current', 'true');
+  await expect(page.getByTestId('thread/305')).toBeInViewport();
+  await expect(next).toBeFocused();
+  expect(await rail.evaluate(el => el.scrollTop)).toBe(nextScrollTop);
+});
