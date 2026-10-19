@@ -61,7 +61,7 @@ export async function startup(opts: { cwd: string; env: Env; fetch?: typeof fetc
     const localReview = new LocalReviewStore(LocalReviewStore.path(git.root));
     await localReview.load();
     await carryOverLocalComments(localReview, store, meta.id);
-    return { git, store, provider, ws, repo, meta, mergeBase, comments, commits, remote, localReview };
+    return { git, store, provider, ws, repo, meta, mergeBase, comments, commits, remote, localReview, ai };
   }
 
   let creds: { email: string; token: string };

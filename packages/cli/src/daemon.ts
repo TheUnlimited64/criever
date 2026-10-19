@@ -28,7 +28,7 @@ const REFRESH_CONCURRENCY = 4;
 export async function createDaemon(opts: {
   env: Record<string, string | undefined>; cwd?: string; staticDir: string | null;
   log: (s: string) => void; fetch?: typeof fetch; pollIntervalMs?: number;
-}): Promise<{ fetch: (req: Request) => Promise<Response>; stop: () => Promise<void> }> {
+}): Promise<{ fetch: (req: Request, server?: { timeout(request: Request, seconds: number): void }) => Promise<Response>; stop: () => Promise<void> }> {
   const paths = defaultPaths(opts.env);
   const locations = { cwd: opts.cwd ?? process.cwd(), home: opts.env.HOME || opts.env.USERPROFILE || homedir() };
   const pollIntervalMs = opts.pollIntervalMs ?? 60_000;
@@ -107,7 +107,7 @@ export async function createDaemon(opts: {
       .finally(() => { periodic = null; });
   }, pollIntervalMs);
   timer.unref();
-  async function handle(req: Request): Promise<Response> {
+  async function handle(req: Request, server?: { timeout(request: Request, seconds: number): void }): Promise<Response> {
     const url = new URL(req.url);
     if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
       || (req.headers.has('host') && req.headers.get('host')?.toLowerCase() !== url.host.toLowerCase())) return json({ error: 'Untrusted Host' }, 403);
@@ -122,7 +122,7 @@ export async function createDaemon(opts: {
         const s = sessions.get(sessionApi[1] ?? '');
         if (!s) return json({ error: 'Review session expired or not found' }, 404);
         url.pathname = `/api/${sessionApi[2]}`;
-        return s.handler(new Request(url, req));
+        return s.handler(new Request(url, req), server ? { timeout: (_request, seconds) => server.timeout(req, seconds) } : undefined);
       }
       const sessionInfo = /^\/api\/workspace\/sessions\/([^/]+)$/.exec(p);
       if (sessionInfo && req.method === 'GET') {

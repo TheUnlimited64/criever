@@ -2,8 +2,9 @@
 import { existsSync } from 'node:fs';
 import { BitbucketError } from './bitbucket';
 import { GitHubError } from './github';
+import { AiAdapter } from './ai';
 import { runAiCli } from './ai-cli';
-import { AiReviewChannel } from './ai-review-channel';
+import { AiReviewChannel, aiPostingCommand } from './ai-review-channel';
 import { runCommentsCli } from './cli-comments';
 import { UserError } from './errors';
 import { createHandler } from './server';
@@ -59,15 +60,13 @@ try {
     const deps = await startup({ cwd: process.cwd(), env: process.env, log: s => console.error(s), local, base, head });
     const staticDir = dev ? null : 'embedded';
     const vscode = createVscode({ repoRoot: deps.git.root, cacheDir: (await import('./config')).defaultPaths(process.env).cacheDir, log: s => console.error(s) });
-  const quote = (value: string) => /^[\w./-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
-  const executable = process.argv[1]?.endsWith('.ts') ? [process.execPath, process.argv[1]] : [process.execPath];
-  const reviewChannel = new AiReviewChannel(deps.store, [...executable, '--ai'].map(quote).join(' '));
-  await reviewChannel.start();
+    const reviewChannel = new AiReviewChannel(deps.store, aiPostingCommand());
+    await reviewChannel.start();
     const server = Bun.serve({ hostname: '127.0.0.1', port, fetch: createHandler({ ...deps, staticDir, vscode, reviewChannel }) });
     const url = `http://127.0.0.1:${server.port}`;
     console.error(`criever ready: ${url}`);
     if (!noOpen) openBrowser(url);
-    const stop = async () => { server.stop(true); await reviewChannel.close(); await vscode.stop(); process.exit(0); };
+    const stop = async () => { server.stop(true); await reviewChannel.close(); if (deps.ai instanceof AiAdapter) await deps.ai.stop(); await vscode.stop(); process.exit(0); };
     process.on('SIGINT', stop); process.on('SIGTERM', stop);
   }
 } catch (e) {

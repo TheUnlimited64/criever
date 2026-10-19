@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-test.beforeEach(async ({ request }) => { await request.post('http://127.0.0.1:4799/__reset'); });
+test.beforeEach(async ({ request }) => { await request.post('/__reset'); });
 test('⌘K fuzzy-finds changed files first and opens on Enter', async ({ page }) => {
   await page.goto('/'); await expect(page.getByTestId('files/count')).toBeVisible(); await page.keyboard.press('Control+k');
   const pal = page.getByTestId('filePalette'); await expect(pal).toBeVisible();

@@ -11,15 +11,18 @@ import { GitHubProvider } from './providers/github';
 import { StateStore } from './state';
 import { createHandler, type ServerDeps } from './server';
 import { createVscode } from './vscode';
+import { AiAdapter } from './ai';
+import { AiReviewChannel, aiPostingCommand } from './ai-review-channel';
+import { loadHarnesses } from './config';
 import { DaemonError } from './errors';
 
 export function createSessions(opts: {
-  stateDir: string; cacheDir: string; log: (s: string) => void;
+  stateDir: string; cacheDir: string; configPath: string; log: (s: string) => void;
   client: (project: WorkspaceProject) => Promise<GitHubClient | BitbucketClient>;
 }) {
   const sessions = new Map<string, {
     info: WorkspaceSession; deps: ServerDeps; handler: ReturnType<typeof createHandler>;
-    source: Git; checkout: string; vscode: ReturnType<typeof createVscode>;
+    source: Git; checkout: string; ai: AiAdapter; reviewChannel: AiReviewChannel; vscode: ReturnType<typeof createVscode>;
   }>();
   const stores = new Map<string, StateStore>();
 
@@ -86,6 +89,7 @@ export function createSessions(opts: {
     const mergeBase = await source.mergeBase(meta.destinationHead, meta.sourceHead);
     const latest = await openMeta();
     if (latest.sourceHead !== meta.sourceHead || latest.destinationHead !== meta.destinationHead) throw new DaemonError('Pull request changed during checkout; refresh and try again', 409);
+    const harnesses = await loadHarnesses(opts.configPath);
     const worktree = target === 'temporary' ? await mkdtemp(join(tmpdir(), 'criever-review-')) : source.root;
     if (target === 'temporary') {
       try { await source.run(['worktree', 'add', '--detach', worktree, meta.sourceHead]); }
@@ -97,19 +101,26 @@ export function createSessions(opts: {
       for (const [oldId, old] of sessions) {
         if (old.info.checkoutTarget !== 'repository' || old.source.root !== source.root) continue;
         sessions.delete(oldId);
+        await old.reviewChannel.close();
+        await old.ai.stop();
         try { await old.vscode.stop(); }
         catch (e) { opts.log(`Could not stop replaced review editor: ${e instanceof Error ? e.message : String(e)}`); }
       }
     }
     const vscode = createVscode({ repoRoot: worktree, cacheDir: opts.cacheDir, dataDir: join(opts.cacheDir, 'vscode-sessions', id), log: opts.log });
-    const deps: ServerDeps = { git: new Git(worktree), store, provider, ws: p.owner, repo: p.repo, meta, mergeBase, comments, commits, remote, staticDir: null, vscode };
+    const git = new Git(worktree);
+    const ai = new AiAdapter(harnesses, git);
+    const reviewChannel = new AiReviewChannel(store, aiPostingCommand());
+    const deps: ServerDeps = { git, ai, reviewChannel, store, provider, ws: p.owner, repo: p.repo, meta, mergeBase, comments, commits, remote, staticDir: null, vscode };
     const info: WorkspaceSession = { id, projectId: p.id, prId, sourceHead: meta.sourceHead, title: meta.title, url: `/review/${id}/`, checkoutTarget: target, checkoutPath: worktree };
-    sessions.set(id, { info, deps, handler: createHandler(deps), source, checkout: worktree, vscode });
+    sessions.set(id, { info, deps, handler: createHandler(deps), source, checkout: worktree, vscode, ai, reviewChannel });
     return info;
   }
 
   async function stop() {
     for (const s of sessions.values()) {
+      await s.reviewChannel.close();
+      await s.ai.stop();
       await s.vscode.stop();
       if (s.info.checkoutTarget === 'temporary') await removeTemporary(s.source, s.checkout);
     }

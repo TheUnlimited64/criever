@@ -22,10 +22,28 @@ export interface AiRunOptions {
 }
 
 export class AiAdapter implements AiRunner {
+  private readonly running = new Map<AbortController, Promise<string>>();
+  private stopped = false;
   constructor(private readonly harnesses: readonly Harness[], private readonly git: Git) {}
   list(): readonly Pick<Harness, 'id' | 'name' | 'kind'>[] { return this.harnesses.map(({ id, name, kind }) => ({ id, name, kind })); }
 
   async run(id: string, prompt: string, mode: 'chat' | 'patch' = 'chat', options?: AiRunOptions): Promise<string> {
+    if (this.stopped) throw new Error('AI session is shutting down');
+    const controller = new AbortController();
+    const signal = options?.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
+    const task = this.execute(id, prompt, mode, { ...options, signal });
+    this.running.set(controller, task);
+    try { return await task; } finally { this.running.delete(controller); }
+  }
+
+  async stop(): Promise<void> {
+    this.stopped = true;
+    for (const controller of this.running.keys()) controller.abort();
+    await Promise.allSettled(this.running.values());
+  }
+
+  private async execute(id: string, prompt: string, mode: 'chat' | 'patch', options: AiRunOptions): Promise<string> {
+    options.signal?.throwIfAborted();
     const harness = this.harnesses.find(item => item.id === id);
     if (!harness) throw new Error(`Unknown AI harness: ${id}`);
     if (Buffer.byteLength(prompt, 'utf8') > INPUT_LIMIT) throw new Error('AI input exceeded limit');

@@ -79,3 +79,19 @@ it('lets a thorough OpenCode review continue beyond five minutes', async () => {
     await expect(review).resolves.toBe('');
   } finally { vi.useRealTimers(); }
 });
+
+it('stops an active harness before session cleanup and rejects new work', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'criever-ai-stop-'));
+  dirs.push(root);
+  const ready = join(root, 'ready');
+  const script = join(root, 'wait.ts');
+  writeFileSync(script, `await Bun.write(${JSON.stringify(ready)}, 'ready'); await Bun.sleep(60_000);`);
+  const executable = join(root, 'harness');
+  writeFileSync(executable, `#!/bin/sh\nexec "${process.execPath}" "${script}"\n`, { mode: 0o755 });
+  const adapter = new AiAdapter([{ id: 'test', name: 'Test', kind: 'claude', executable }], new Git(root));
+  const outcome = adapter.run('test', 'Wait').then(() => 'unexpected success', () => 'stopped');
+  await vi.waitFor(() => expect(readFileSync(ready, 'utf8')).toBe('ready'));
+  await adapter.stop();
+  expect(await outcome).toBe('stopped');
+  await expect(adapter.run('test', 'New question')).rejects.toThrow('shutting down');
+});

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDaemon } from '../src/daemon';
@@ -12,6 +12,11 @@ const port = Number(portIndex < 0 ? 4803 : args[portIndex + 1]);
 const hostIndex = args.indexOf('--host');
 const hostname = hostIndex < 0 ? '127.0.0.1' : args[hostIndex + 1]!;
 const root = await mkdtemp(join(tmpdir(), 'criever-daemon-e2e-'));
+const configDir = join(root, 'config');
+await mkdir(join(configDir, 'criever'), { recursive: true });
+const aiExecutable = join(root, 'ai-harness');
+await writeFile(aiExecutable, `#!/bin/sh\nexec "${process.execPath}" "${join(import.meta.dir, 'daemon-ai.ts')}"\n`, { mode: 0o755 });
+await writeFile(join(configDir, 'criever', 'config.json'), JSON.stringify({ harnesses: [{ id: 'fixture', name: 'Daemon fixture', kind: 'claude', executable: aiExecutable }] }));
 const repo = await buildFixtureRepo(join(root, 'review-fixture'));
 const git = new Git(repo.root);
 const stub = startStubBitbucket({
@@ -71,7 +76,7 @@ const wireFetch: typeof fetch = Object.assign(async (input: Parameters<typeof fe
 
 const start = () => createDaemon({
   env: {
-    HOME: root,
+    HOME: root, XDG_CONFIG_HOME: configDir,
     ATLASSIAN_USER_EMAIL: 'alex@example.test', ATLASSIAN_API_TOKEN: 'synthetic-token',
     BITBUCKET_API_BASE: stub.base, CRIEVER_STATE_DIR: join(root, `state-${generation}`),
     CRIEVER_CACHE_DIR: join(root, `cache-${generation}`),

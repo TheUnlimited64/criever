@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-test.beforeEach(async ({ request }) => { await request.post('http://127.0.0.1:4801/__reset'); });
+test.beforeEach(async ({ request }) => { await request.post('/__reset'); });
 
 test('header shows the local-review label and a Save button', async ({ page }) => {
   await page.goto('/'); await expect(page.getByTestId('files/count')).toBeVisible();

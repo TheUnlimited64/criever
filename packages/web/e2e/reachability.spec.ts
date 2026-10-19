@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
-test.beforeEach(async ({ request }) => { await request.post('http://127.0.0.1:4799/__reset'); });
+test.beforeEach(async ({ request }) => { await request.post('/__reset'); });
 
 test('every thread the API returns renders a reachable card with a working resolve control', async ({ page, request }) => {
-  const { threads } = await (await request.get('http://127.0.0.1:4799/api/comments')).json();
+  const { threads } = await (await request.get('/api/comments')).json();
   await page.goto('/'); await expect(page.getByTestId('files/count')).toBeVisible();
   // the rail's groups only render once useComments() has resolved — wait for that before counting
   // items, otherwise the first thread checked races the fetch and looks orphaned when it isn't.

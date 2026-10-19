@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-test.beforeEach(async ({ request }) => { await request.post('http://127.0.0.1:4799/__reset'); });
+test.beforeEach(async ({ request }) => { await request.post('/__reset'); });
 
 test('shell renders header, files, code, rail, footer from fixture PR', async ({ page }) => {
   await page.goto('/');
@@ -32,7 +32,7 @@ test('Open in VS Code asks the server for the current file', async ({ page, requ
   const popup = page.waitForEvent('popup').catch(() => null);
   await page.getByTestId('code/openInVsCode').click();
   await popup;
-  const opened = await (await request.get('http://127.0.0.1:4799/__vscode')).json();
+  const opened = await (await request.get('/__vscode')).json();
   expect(opened.at(-1)).toEqual({ path: 'src/devices/DeviceList.tsx', line: 1 });
 });
 

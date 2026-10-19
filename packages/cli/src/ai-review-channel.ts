@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { AiActiveReview, AiFinding, AiLookout, AiReviewPhase } from '@criever/shared';
 import { anchorPath } from './ai-review-anchors';
@@ -7,6 +8,12 @@ import { pendingObservation, reviewSummary, snapshot, type ReviewRun, type Start
 import type { StateStore } from './state';
 
 const SHUTDOWN_TIMEOUT_MS = 2_000;
+
+export function aiPostingCommand(): string {
+  const quote = (value: string) => /^[\w./-]+$/.test(value) ? value : "'" + value.replaceAll("'", "'\\''") + "'";
+  const executable = process.argv[1]?.endsWith('.ts') ? [process.execPath, join(import.meta.dir, 'main.ts')] : [process.execPath];
+  return [...executable, '--ai'].map(quote).join(' ');
+}
 
 export class AiReviewChannel {
   private readonly transport: AiReviewTransport;
