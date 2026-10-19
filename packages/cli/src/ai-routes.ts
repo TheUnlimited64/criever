@@ -78,7 +78,7 @@ async function postAi(req: Request, path: string, deps: AiRouteDeps): Promise<Re
   const renames = new Map<string, string>();
   for (const file of changedFiles) if (file.status === 'R' && file.oldPath && file.newPath) renames.set(file.oldPath, file.newPath);
   const started = await reviewChannel.startReview({
-    git: deps.git, harnessId, transport: harness?.kind === 'codex' ? 'tcp' : 'unix', base: deps.base, head: deps.meta.sourceHead, changedFiles, anchors, renames,
+    git: deps.git, harnessId, base: deps.base, head: deps.meta.sourceHead, changedFiles, anchors, renames,
     launch: (env, signal) => deps.adapter.run(harnessId, reviewPrompt(patch, deps.base, deps.meta.sourceHead, reviewChannel.command), 'patch', { env, signal }),
   });
   return json({ runId: started.id, status: 'starting' }, 202);

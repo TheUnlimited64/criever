@@ -23,6 +23,18 @@ describe('authenticated AI review channel', () => {
     } finally { output.mockRestore(); error.mockRestore(); }
   });
 
+  it('requires a loopback TCP URL instead of a Unix socket', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(await runAiCli(['status', '--status', 'observing'], {
+        CRIEVER_AI_SOCKET: '/tmp/review.sock',
+        CRIEVER_AI_TOKEN: 'token',
+        CRIEVER_AI_REVIEW_ID: 'review',
+      })).toBe(1);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('CRIEVER_AI_URL'));
+    } finally { error.mockRestore(); }
+  });
+
   it('accepts CLI posts through a capability-checked loopback TCP transport', async () => {
     const f = await fixture(roots);
     const channel = new AiReviewChannel(f.store);
@@ -35,7 +47,7 @@ describe('authenticated AI review channel', () => {
       let address = '';
       let capability = '';
       const started = await channel.startReview({
-        transport: 'tcp', harnessId: 'codex', git: f.git, base: f.base, head: f.head,
+        harnessId: 'codex', git: f.git, base: f.base, head: f.head,
         changedFiles: await f.git.changedFiles(f.base, f.head), anchors: new Set(['a.ts\u0000new\u00002']), renames: new Map(),
         launch: (env, signal) => { address = env.CRIEVER_AI_URL ?? ''; capability = env.CRIEVER_AI_TOKEN ?? ''; return adapter.run('codex', 'Inspect revisions', 'patch', { env, signal }); },
       });
@@ -161,12 +173,13 @@ describe('authenticated AI review channel', () => {
     try {
       await launchStarted;
       if (!capturedEnv) throw new Error('review launch environment missing');
-      const response = await fetch('http://criever-ai/review', {
-        unix: channel.socketPath,
-        method: 'POST',
+      const reviewUrl = capturedEnv.CRIEVER_AI_URL;
+      if (!reviewUrl) throw new Error('review URL missing');
+      const response = await fetch(reviewUrl,
+        { method: 'POST',
         headers: { authorization: `Bearer ${capturedEnv.CRIEVER_AI_TOKEN}`, 'content-type': 'application/json' },
         body: JSON.stringify({ reviewId: capturedEnv.CRIEVER_AI_REVIEW_ID, type: 'status', phase: 'observing', padding: 'x'.repeat(300_000) }),
-      });
+        });
       expect(response.status).toBe(413);
       releaseLaunch();
     } finally {
@@ -186,10 +199,11 @@ describe('authenticated AI review channel', () => {
         launch: async vars => { env = vars; await new Promise<void>(resolve => { release = resolve; }); },
       });
       if (!env) throw new Error('review capability missing');
+      const reviewUrl = env.CRIEVER_AI_URL;
+      if (!reviewUrl) throw new Error('review URL missing');
       let rejected = false;
       for (let i = 0; i < 50 && !rejected; i++) {
-        const response = await fetch('http://criever-ai/review', {
-          unix: channel.socketPath, method: 'POST',
+        const response = await fetch(reviewUrl, { method: 'POST',
           headers: { authorization: `Bearer ${env.CRIEVER_AI_TOKEN}`, 'content-type': 'application/json' },
           body: JSON.stringify({ reviewId: env.CRIEVER_AI_REVIEW_ID, type: 'observation', id: `o${i}`, evidence: 'x'.repeat(95_000) }),
         });

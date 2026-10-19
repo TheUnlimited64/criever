@@ -1,26 +1,24 @@
-import type { HarnessKind } from './config';
+import type { LegacyHarnessKind } from './config';
 
 export interface ReviewLaunch {
   readonly command: string;
-  readonly socket?: string;
-  readonly url?: string;
+  readonly url: string;
   readonly repository: string;
 }
 
-export function reviewArgs(kind: HarnessKind, context: ReviewLaunch): string[] {
+export function reviewArgs(kind: LegacyHarnessKind, context: ReviewLaunch): string[] {
+  if (new URL(context.url).hostname !== '127.0.0.1') throw new Error(`${kind} review requires the loopback channel`);
   switch (kind) {
     case 'claude': {
-      if (!context.socket) throw new Error('Claude review requires the private Unix socket');
       return [
       '-p', '--output-format', 'text', '--permission-mode', 'dontAsk',
       '--settings', JSON.stringify({
         permissions: { allow: ['Read', 'Glob', 'Grep', 'Skill', 'Task', `Bash(${context.command} *)`, 'Bash(git show *)', 'Bash(git diff *)', 'Bash(git grep *)', 'Bash(git log *)'], deny: ['Edit', 'Write', 'NotebookEdit'] },
-        sandbox: { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false, filesystem: { denyWrite: [context.repository] }, network: { allowUnixSockets: [context.socket] } },
+        sandbox: { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false, filesystem: { denyWrite: [context.repository] }, network: { allowedDomains: ['127.0.0.1'] } },
       }),
       ];
     }
     case 'codex': {
-      if (!context.url || new URL(context.url).hostname !== '127.0.0.1') throw new Error('Codex review requires the loopback channel');
       return [
       'exec', '--ignore-user-config', '--strict-config', '--json',
       '-c', 'default_permissions="criever_review"',

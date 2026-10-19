@@ -37,12 +37,11 @@ async function postReviewOutput(raw: string, env: ReviewEnv): Promise<void> {
 }
 
 async function post(env: ReviewEnv, event: Readonly<Record<string, unknown>>): Promise<void> {
-  const socket = env.CRIEVER_AI_SOCKET;
   const url = env.CRIEVER_AI_URL;
   const token = env.CRIEVER_AI_TOKEN;
   const reviewId = env.CRIEVER_AI_REVIEW_ID;
-  if ((!socket && !url) || !token || !reviewId) throw new Error('review test capability missing');
-  const response = await fetch(url ?? 'http://criever-ai/review', { ...(socket && !url ? { unix: socket } : {}), method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ reviewId, ...event }) });
+  if (!url || !token || !reviewId) throw new Error('review test capability missing');
+  const response = await fetch(url, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ reviewId, ...event }) });
   if (!response.ok) throw new Error(await response.text());
 }
 

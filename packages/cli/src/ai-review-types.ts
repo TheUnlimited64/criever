@@ -13,7 +13,6 @@ export interface AnchorContext {
 
 export interface StartReviewInput extends AnchorContext {
   readonly harnessId: string;
-  readonly transport?: 'unix' | 'tcp';
   readonly launch: (env: Readonly<Record<string, string>>, signal?: AbortSignal) => Promise<unknown>;
 }
 

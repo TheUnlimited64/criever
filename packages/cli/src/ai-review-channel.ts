@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { AiActiveReview, AiFinding, AiLookout, AiReviewPhase } from '@criever/shared';
 import { anchorPath } from './ai-review-anchors';
 import { isRecord, MAX_REVIEW_EVENTS, MAX_REVIEW_TOTAL_BYTES, parseReviewEvent, readJson, response, ReviewProtocolError, type AiReviewEvent } from './ai-review-protocol';
-import { AiReviewTransport } from './ai-review-transport';
+import { AiReviewTransport } from './ai-review-tcp';
 import { pendingObservation, reviewSummary, snapshot, type ReviewRun, type StartedReview, type StartReviewInput } from './ai-review-types';
 import type { StateStore } from './state';
 
@@ -16,10 +16,6 @@ export class AiReviewChannel {
 
   constructor(private readonly store: StateStore, readonly command = 'criever --ai') {
     this.transport = new AiReviewTransport(request => this.handle(request));
-  }
-
-  get socketPath(): string {
-    return this.transport.socketPath;
   }
 
   get activeReviews(): readonly AiActiveReview[] {
@@ -58,7 +54,7 @@ export class AiReviewChannel {
     this.runs.set(id, run);
     this.completions.set(id, done);
     const env = {
-      ...await this.transport.endpoint(input.transport ?? 'unix'),
+      ...await this.transport.endpoint(),
       CRIEVER_AI_TOKEN: token,
       CRIEVER_AI_REVIEW_ID: id,
       CRIEVER_AI_COMMAND: this.command,

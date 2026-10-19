@@ -1,7 +1,7 @@
 import { UserError } from './errors';
 import type { AiReviewEvent } from './ai-review-protocol';
 
-const SOCKET_ENV = 'CRIEVER_AI_SOCKET';
+const URL_ENV = 'CRIEVER_AI_URL';
 const TOKEN_ENV = 'CRIEVER_AI_TOKEN';
 const REVIEW_ENV = 'CRIEVER_AI_REVIEW_ID';
 
@@ -12,12 +12,11 @@ export async function runAiCli(argv: readonly string[], env: Readonly<Record<str
   }
   try {
     const event = parseCommand(argv);
-    const url = env.CRIEVER_AI_URL;
-    const socket = url ? undefined : requiredEnv(env, SOCKET_ENV);
+    const url = requiredEnv(env, URL_ENV);
+    const endpoint = reviewUrl(url);
     const token = requiredEnv(env, TOKEN_ENV);
     const reviewId = requiredEnv(env, REVIEW_ENV);
-    const response = await fetch(url ?? 'http://criever-ai/review', {
-      ...(socket ? { unix: socket } : {}),
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ reviewId, ...event }),
@@ -34,6 +33,14 @@ export async function runAiCli(argv: readonly string[], env: Readonly<Record<str
     if (error instanceof Error) { console.error(`AI review post failed: ${error.message}`); return 1; }
     throw error;
   }
+}
+
+function reviewUrl(value: string): URL {
+  let url: URL;
+  try { url = new URL(value); }
+  catch (error) { throw new UserError(`${URL_ENV} must be an http://127.0.0.1 URL.`); }
+  if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new UserError(`${URL_ENV} must be an http://127.0.0.1 URL.`);
+  return url;
 }
 
 function parseCommand(argv: readonly string[]): AiReviewEvent {

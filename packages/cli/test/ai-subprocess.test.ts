@@ -40,7 +40,7 @@ it('keeps OpenCode reviews read-only without disabling review plugins', async ()
   const adapter = new AiAdapter([{ id: 'opencode', name: 'OpenCode', kind: 'opencode', executable }], new Git(root));
 
   const argsLog = join(root, 'args.log');
-  const patch = await adapter.run('opencode', 'Review the changes', 'patch', { env: { ARGS_LOG: argsLog, CRIEVER_AI_COMMAND: '/bin/criever --ai', CRIEVER_AI_SOCKET: '/tmp/review.sock' } });
+  const patch = await adapter.run('opencode', 'Review the changes', 'patch', { env: { ARGS_LOG: argsLog, CRIEVER_AI_COMMAND: '/bin/criever --ai', CRIEVER_AI_URL: 'http://127.0.0.1:4955/review' } });
   const invocation = JSON.parse(readFileSync(argsLog, 'utf8')) as { permission: { edit: string; bash: Record<string, string> }; args: string };
   expect(patch).toBe('');
   expect(invocation.permission.edit).toBe('deny');
@@ -48,6 +48,21 @@ it('keeps OpenCode reviews read-only without disabling review plugins', async ()
   expect(invocation.permission.bash['/bin/criever --ai *']).toBe('allow');
   expect(invocation.args).toContain('run --agent build --format json');
   expect(invocation.args).not.toContain('--pure');
+});
+
+it('gives Claude reviews loopback TCP access without Unix socket permissions', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'criever-claude-'));
+  dirs.push(root);
+  const executable = join(root, 'claude.sh');
+  writeFileSync(executable, '#!/bin/sh\nprintf "%s" "$*" > "$ARGS_LOG"\n');
+  chmodSync(executable, 0o755);
+  const adapter = new AiAdapter([{ id: 'claude', name: 'Claude', kind: 'claude', executable }], new Git(root));
+
+  const argsLog = join(root, 'args.log');
+  await adapter.run('claude', 'Review the changes', 'patch', { env: { ARGS_LOG: argsLog, CRIEVER_AI_URL: 'http://127.0.0.1:4955/review' } });
+  const args = readFileSync(argsLog, 'utf8');
+  expect(args).toContain('"allowedDomains":["127.0.0.1"]');
+  expect(args).not.toContain('allowUnixSockets');
 });
 
 it('lets a thorough OpenCode review continue beyond five minutes', async () => {
@@ -59,7 +74,7 @@ it('lets a thorough OpenCode review continue beyond five minutes', async () => {
   const adapter = new AiAdapter([{ id: 'opencode', name: 'OpenCode', kind: 'opencode', executable }], new Git(root));
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
-    const review = adapter.run('opencode', 'Check the full change', 'patch', { env: { CRIEVER_AI_SOCKET: '/tmp/review.sock' } });
+    const review = adapter.run('opencode', 'Check the full change', 'patch', { env: { CRIEVER_AI_URL: 'http://127.0.0.1:4955/review' } });
     vi.advanceTimersByTime(300_001);
     await expect(review).resolves.toBe('');
   } finally { vi.useRealTimers(); }

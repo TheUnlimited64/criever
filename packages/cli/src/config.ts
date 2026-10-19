@@ -4,8 +4,11 @@ import { join } from 'node:path';
 import { UserError } from './errors';
 
 type Env = Record<string, string | undefined>;
-export type HarnessKind = 'claude' | 'codex' | 'opencode';
-export interface Harness { readonly id: string; readonly name: string; readonly kind: HarnessKind; readonly executable?: string }
+export type LegacyHarnessKind = 'claude' | 'codex' | 'opencode';
+export type HarnessKind = 'acp' | LegacyHarnessKind;
+export interface LegacyHarness { readonly id: string; readonly name: string; readonly kind: LegacyHarnessKind; readonly executable?: string }
+export interface AcpHarness { readonly id: string; readonly name: string; readonly kind: 'acp'; readonly executable: string; readonly args?: readonly string[] }
+export type Harness = LegacyHarness | AcpHarness;
 
 export function defaultPaths(env: Env) {
   const home = homedir();
@@ -46,9 +49,15 @@ export async function loadHarnesses(configPath: string): Promise<readonly Harnes
   return value.harnesses.flatMap((item: unknown): Harness[] => {
     if (typeof item !== 'object' || item === null) return [];
     const candidate = item as Record<string, unknown>;
-    const { id, name, kind, executable } = candidate;
-    if (typeof id !== 'string' || !id || typeof name !== 'string' || !name || !['claude', 'codex', 'opencode'].includes(String(kind))) return [];
+    const { id, name, kind, executable, args } = candidate;
+    if (typeof id !== 'string' || !id || typeof name !== 'string' || !name) return [];
+    if (kind === 'acp') {
+      if (typeof executable !== 'string' || executable.length === 0) return [];
+      if (args !== undefined && (!Array.isArray(args) || args.some(item => typeof item !== 'string'))) return [];
+      return [{ id, name, kind, executable, ...(Array.isArray(args) ? { args } : {}) }];
+    }
+    if (kind !== 'claude' && kind !== 'codex' && kind !== 'opencode') return [];
     if (executable !== undefined && (typeof executable !== 'string' || executable.length === 0)) return [];
-    return [{ id, name, kind: kind as HarnessKind, ...(typeof executable === 'string' ? { executable } : {}) }];
+    return [{ id, name, kind, ...(typeof executable === 'string' ? { executable } : {}) }];
   });
 }
