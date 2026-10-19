@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+const findingBody = '**Support the standalone API origin**\n\nWhen the service runs separately, the new request goes to the hosted shell instead of the API.\n\nFor example:\n\n```ts\n// Expected\nfetch(apiOrigin + \"/devices\")\n```\n\n- Confirm both deployment modes.\n- See the [contract](https://example.com/contract).';
+
 const limitation = 'The external API contract is unavailable in this checkout. Required browser integration evidence is also missing. The review inspected committed code but cannot claim a complete result. '.repeat(12);
 
 test.beforeEach(async ({ request }) => { await request.post('/__reset'); });
@@ -9,7 +11,7 @@ test('long incomplete diagnostics never squeeze findings and provisional results
   await page.route('**/api/ai', async route => {
     const response = await route.fetch();
     const state = await response.json();
-    state.activeReviews = [{ id: 'long-run', harnessId: 'Codex', head: pr.sourceHead, startedAt: new Date().toISOString(), status: 'incomplete', error: limitation, observations: [], findings: [{ id: 'long-finding', path: 'src/api/devices.ts', line: 3, side: 'new', body: 'Support the documented standalone API origin as well as the hosted shell. The new request path otherwise fails when the service is deployed separately.', severity: 'warning', anchorCommit: pr.sourceHead, reviewId: 'long-run' }], lookouts: [1, 2].map(n => ({ id: `long-lookout-${n}`, path: 'src/api/devices.ts', line: 5, side: 'new', body: `Confirm deployment contract ${n} before shipping this change.`, anchorCommit: pr.sourceHead, reviewId: 'long-run' })) }];
+    state.activeReviews = [{ id: 'long-run', harnessId: 'Codex', head: pr.sourceHead, startedAt: new Date().toISOString(), status: 'incomplete', error: limitation, observations: [], findings: [{ id: 'long-finding', path: 'src/api/devices.ts', line: 3, side: 'new', body: findingBody, severity: 'warning', anchorCommit: pr.sourceHead, reviewId: 'long-run' }], lookouts: [1, 2].map(n => ({ id: `long-lookout-${n}`, path: 'src/api/devices.ts', line: 5, side: 'new', body: `Confirm deployment contract ${n} before shipping this change.`, anchorCommit: pr.sourceHead, reviewId: 'long-run' })) }];
     await route.fulfill({ response, json: state });
   });
   await page.emulateMedia({ colorScheme: 'dark' });
@@ -28,6 +30,10 @@ test('long incomplete diagnostics never squeeze findings and provisional results
     expect(await rail.evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath(`findings-${width}.png`) });
   }
+  await expect(first.locator('strong')).toHaveText('Support the standalone API origin');
+  await expect(first.locator('pre code')).toContainText('fetch(apiOrigin');
+  await expect(first.locator('li')).toHaveCount(2);
+  await expect(first.getByRole('link')).toHaveCount(0);
   await page.getByRole('tab', { name: /Findings/ }).focus();
   await page.keyboard.press('ArrowLeft');
   await expect(page.getByRole('tab', { name: 'Chat', exact: true })).toBeFocused();
@@ -53,6 +59,8 @@ test('long incomplete diagnostics never squeeze findings and provisional results
   const inline = page.getByTestId('ai/provisional/long-finding');
   await expect(inline).toBeVisible();
   await expect(inline).toContainText('not available for approval');
+  await expect(inline.locator('pre code')).toContainText('fetch(apiOrigin');
+  await expect(inline.getByRole('link', { name: 'contract' })).toHaveAttribute('rel', 'noopener noreferrer');
   await expect(inline.getByRole('button', { name: 'Approve draft' })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('provisional-in-comments-and-code.png') });
 });

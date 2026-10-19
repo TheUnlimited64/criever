@@ -152,3 +152,10 @@
 @media (prefers-reduced-motion: reduce) {
   .ai-activity-dots i { animation: none; opacity: 1; }
 }
+
+/* Keep review prose readable in the sidebar and inside monospace diff rows. */
+.mdPreview.ai-result-body { min-width: 0; max-width: 100%; padding: 0; margin: 0; white-space: normal; text-align: left; font: 13px/1.65 var(--font-ui); }
+.mdPreview.ai-result-body p { margin: 0 0 12px; }
+.mdPreview.ai-result-body > :last-child { margin-bottom: 0; }
+.mdPreview.ai-result-body pre { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mdPreview.ai-result-body a { color: var(--accent); }

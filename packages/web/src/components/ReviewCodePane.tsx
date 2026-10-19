@@ -1,3 +1,4 @@
+import { AiResultBody } from './AiMessageView';
 import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Side } from '@criever/shared';
@@ -67,7 +68,7 @@ export function ReviewCodePane() {
       ...run.lookouts.map(item => ({ ...item, label: 'Provisional look-out' })),
     ].flatMap(item => item.anchorCommit === pr?.sourceHead && item.path === path && item.line != null && item.side ? [{
       key: `ai-provisional-${item.id}`, afterLine: { side: item.side, line: item.line },
-      node: <div className="ai-guidance ai-provisional" data-testid={`ai/provisional/${item.id}`}><strong>{item.label}</strong><p>{item.body}</p><small>{run.status === 'incomplete' ? 'Review incomplete' : run.status === 'failed' ? 'Review failed' : 'Review in progress'} · not available for approval.</small></div>,
+      node: <div className="ai-guidance ai-provisional" data-testid={`ai/provisional/${item.id}`}><strong>{item.label}</strong><AiResultBody body={item.body} /><small>{run.status === 'incomplete' ? 'Review incomplete' : run.status === 'failed' ? 'Review failed' : 'Review in progress'} · not available for approval.</small></div>,
     }] : []));
     const contextualThreads = Object.entries(aiAtHead ? ai.data?.threads ?? {} : {}).flatMap(([threadId, messages]) => {
       const anchor = threadAnchor(threadId);

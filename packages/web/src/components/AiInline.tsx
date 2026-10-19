@@ -5,7 +5,7 @@ import { api } from '../api';
 import { useStore } from '../store';
 import { usePr } from '../hooks';
 import { AiActivity } from './AiActivity';
-import { AiMessageView } from './AiMessageView';
+import { AiMessageView, AiResultBody } from './AiMessageView';
 
 interface AiAnchor { readonly path: string; readonly line: number; readonly side: Side }
 type AiQuestionTarget = AiAnchor | { readonly path: string };
@@ -26,7 +26,7 @@ export function AiFindingCard({ finding, harnessId, onChange }: { finding: AiFin
   const remove = async () => { await api.aiDeleteFinding(finding.id); onChange(); };
   return <article className="ai-guidance" data-testid={`ai/finding/${finding.id}`}>
     <span>{finding.path}:{finding.line} · {finding.severity} · AI finding</span>
-    {editing ? <textarea aria-label="Edit finding" value={body} onChange={event => setBody(event.target.value)} /> : <p>{finding.body}</p>}
+    {editing ? <textarea aria-label="Edit finding" value={body} onChange={event => setBody(event.target.value)} /> : <AiResultBody body={finding.body} />}
     <div className="ai-actions">
       {editing ? <button className="btn sm" onClick={save}>Save finding</button> : <button className="btn sm ghost" onClick={() => setEditing(true)}>Edit</button>}
       <button className="btn sm ghost" disabled={rewording || !harnessId} onClick={reword}>Reword</button>
@@ -40,7 +40,7 @@ export function AiFindingCard({ finding, harnessId, onChange }: { finding: AiFin
 
 export function AiLookoutCard({ lookout }: { lookout: AiLookout }) {
   return <article className="ai-guidance lookout" data-testid={`ai/lookout/${lookout.id}`}>
-    <span>{lookout.path ? `Look at this · ${lookout.path}:${lookout.line ?? '—'}` : 'Look at this'}</span><p>{lookout.body}</p>
+    <span>{lookout.path ? `Look at this · ${lookout.path}:${lookout.line ?? '—'}` : 'Look at this'}</span><AiResultBody body={lookout.body} />
   </article>;
 }
 

@@ -1,3 +1,4 @@
+import { AiResultBody } from './AiMessageView';
 import { useState } from 'react';
 import type { AiActiveReview, AiFinding, AiLookout, AiReviewRun, Side } from '@criever/shared';
 import { usePr } from '../hooks';
@@ -26,8 +27,8 @@ export function AiResultsList({ runs, findings, lookouts, activeReviews = [] }: 
      {activeReviews.map(run => <section className="ai-results-run ai-results-active" key={run.id} data-testid={`ai/active-review/${run.id}`}>
        <h3>{run.status === 'failed' ? 'Review failed' : run.status === 'incomplete' ? 'Review incomplete' : 'Review in progress'}<small>{run.harnessId} · provisional</small></h3>
        {!run.findings.length && !run.lookouts.length && <p className="ai-results-empty">{run.status === 'failed' || run.status === 'incomplete' ? 'No findings were posted before this review stopped.' : 'Waiting for provisional findings or look-outs.'}</p>}
-       {run.findings.map(item => <button className="ai-result-item" data-testid={`ai/result/${item.id}`} key={item.id} onClick={() => jump(item.path, item.side, item.line, item.anchorCommit)} aria-label={`Finding: ${item.body}`}><span className="ai-result-meta">Provisional finding · {item.severity} · {item.path}:{item.line}</span><span className="ai-result-body">{item.body}</span></button>)}
-       {run.lookouts.map(item => item.path && item.side && item.line ? <button className="ai-result-item lookout" data-testid={`ai/result/${item.id}`} key={item.id} onClick={() => jump(item.path ?? '', item.side ?? 'new', item.line ?? 0, item.anchorCommit)} aria-label={`Look at this: ${item.body}`}><span className="ai-result-meta">Provisional look-out · {item.path}:{item.line}</span><span className="ai-result-body">{item.body}</span></button> : <div className="ai-result-item lookout" data-testid={`ai/result/${item.id}`} key={item.id}><span className="ai-result-meta">Provisional look-out</span><span className="ai-result-body">{item.body}</span></div>)}
+       {run.findings.map(item => <button className="ai-result-item" data-testid={`ai/result/${item.id}`} key={item.id} onClick={() => jump(item.path, item.side, item.line, item.anchorCommit)} aria-label={`Finding: ${item.body}`}><span className="ai-result-meta">Provisional finding · {item.severity} · {item.path}:{item.line}</span><AiResultBody body={item.body} interactive={false} /></button>)}
+       {run.lookouts.map(item => item.path && item.side && item.line ? <button className="ai-result-item lookout" data-testid={`ai/result/${item.id}`} key={item.id} onClick={() => jump(item.path ?? '', item.side ?? 'new', item.line ?? 0, item.anchorCommit)} aria-label={`Look at this: ${item.body}`}><span className="ai-result-meta">Provisional look-out · {item.path}:{item.line}</span><AiResultBody body={item.body} interactive={false} /></button> : <div className="ai-result-item lookout" data-testid={`ai/result/${item.id}`} key={item.id}><span className="ai-result-meta">Provisional look-out</span><AiResultBody body={item.body} interactive={false} /></div>)}
      </section>)}
     {groups.map((run, index) => {
       const matchedFindings = findings.filter(item => (item.reviewId ?? 'legacy') === run.id);
@@ -36,11 +37,11 @@ export function AiResultsList({ runs, findings, lookouts, activeReviews = [] }: 
         <h3>Review {groups.length - index}<small>{run.harnessId && `${run.harnessId} · `}{run.completedAt ? new Date(run.completedAt).toLocaleString() : 'Earlier review'}</small></h3>
         {!matchedFindings.length && !matchedLookouts.length && <p className="ai-results-empty">No findings or look-outs in this run.</p>}
         {matchedFindings.map(item => <button className="ai-result-item" data-testid={`ai/result/${item.id}`} key={item.id} onClick={() => jump(item.path, item.side, item.line, item.anchorCommit)} aria-label={`Finding: ${item.body}`}>
-          <span className="ai-result-meta">Finding · {item.severity} · {item.path}:{item.line}</span><span className="ai-result-body">{item.body}</span>
+          <span className="ai-result-meta">Finding · {item.severity} · {item.path}:{item.line}</span><AiResultBody body={item.body} interactive={false} />
         </button>)}
         {matchedLookouts.map(item => item.path && item.side && item.line ? <button className="ai-result-item lookout" data-testid={`ai/result/${item.id}`} key={item.id} onClick={() => { if (item.path && item.side && item.line) jump(item.path, item.side, item.line, item.anchorCommit); }} aria-label={`Look at this: ${item.body}`}>
-          <span className="ai-result-meta">Look at this · {item.path}:{item.line}</span><span className="ai-result-body">{item.body}</span>
-        </button> : <div className="ai-result-item lookout" data-testid={`ai/result/${item.id}`} key={item.id}><span className="ai-result-meta">Look at this</span><span className="ai-result-body">{item.body}</span></div>)}
+          <span className="ai-result-meta">Look at this · {item.path}:{item.line}</span><AiResultBody body={item.body} interactive={false} />
+        </button> : <div className="ai-result-item lookout" data-testid={`ai/result/${item.id}`} key={item.id}><span className="ai-result-meta">Look at this</span><AiResultBody body={item.body} interactive={false} /></div>)}
       </section>;
     })}
   </div>;
