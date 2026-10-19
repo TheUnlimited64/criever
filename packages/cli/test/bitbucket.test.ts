@@ -22,6 +22,54 @@ const mk = (routes: Record<string, (init?: RequestInit) => Response>) => {
 };
 
 describe('BitbucketClient', () => {
+  it.each([40, 64])('uses complete %i-character commit IDs without detail requests', async length => {
+    const { c, calls } = mk({});
+    const hash = 'A'.repeat(length);
+    expect(await c.resolveRevision('w', 'r', { branch: { name: 'branch' }, commit: { hash } })).toBe(hash.toLowerCase());
+    expect(calls).toEqual([]);
+  });
+  it.each([41, 63])('rejects %i-character commit IDs rather than treating them as full hashes', async length => {
+    const { c, calls } = mk({});
+    await expect(c.resolveRevision('w', 'r', { branch: { name: 'branch' }, commit: { hash: 'a'.repeat(length) } })).rejects.toMatchObject({ status: 409 });
+    expect(calls).toEqual([]);
+  });
+  it('resolves source and destination in their own repositories and shares successful lookups', async () => {
+    const head = 'a'.repeat(40), base = 'b'.repeat(64);
+    const { c, calls } = mk({
+      '/repositories/fork/source/commit/aaaaaaaaaaaa': json(JSON.stringify({ hash: head })),
+      '/repositories/owner/destination/commit/bbbbbbbbbbbb': json(JSON.stringify({ hash: base })),
+    });
+    const source = { branch: { name: 'feature' }, commit: { hash: head.slice(0, 12) }, repository: { full_name: 'fork/source' } };
+    const destination = { branch: { name: 'main' }, commit: { hash: base.slice(0, 12) }, repository: { full_name: 'owner/destination' } };
+    expect(await c.resolveRevision('owner', 'destination', source)).toBe(head);
+    expect(await c.resolveRevision('owner', 'destination', destination)).toBe(base);
+    expect(await c.resolveRevision('owner', 'destination', source)).toBe(head);
+    expect(calls).toHaveLength(2);
+  });
+  it.each(['null', '{}', '{"hash":42}', '{"hash":"--bad"}', '{"hash":"aaaaaaaaaaaa"}'])('rejects malformed commit detail %s', async body => {
+    const { c } = mk({ '/commit/': json(body) });
+    await expect(c.resolveRevision('w', 'r', { branch: { name: 'b' }, commit: { hash: 'aaaaaaaaaaaa' } })).rejects.toMatchObject({ status: 409 });
+  });
+  it('lists all PR pages without exceeding the provider page-size limit', async () => {
+    const server = Bun.serve({
+      hostname: '127.0.0.1', port: 0,
+      fetch(req) {
+        const url = new URL(req.url);
+        if (url.pathname.endsWith('/user')) return Response.json({ uuid: '{me}' });
+        if (Number(url.searchParams.get('pagelen') ?? 10) > 50) return Response.json({ error: { message: 'Invalid pagelen' } }, { status: 400 });
+        return Response.json(url.searchParams.has('page')
+          ? { values: [{ id: 242, reviewers: [] }] }
+          : { values: [{ id: 241, reviewers: [{ uuid: '{me}' }] }], next: `${url.origin}${url.pathname}?state=OPEN&page=2` });
+      },
+    });
+    try {
+      const client = new BitbucketClient({ base: `${server.url}2.0`, email: 'e', token: 't' });
+      expect((await client.listOpenPrs('workspace', 'repo')).map(({ pr, assignedToMe }) => [pr.id, assignedToMe]))
+        .toEqual([[241, true], [242, false]]);
+    } finally {
+      await server.stop(true);
+    }
+  });
   it('sends basic auth and the q filter; picks newest PR', async () => {
     const { c, calls } = mk({ '/pullrequests?': json(fx('pr')) });
     const pr = await c.findOpenPr('sample-workspace', 'review-fixture', 'feat/virtual-list-review');

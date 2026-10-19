@@ -1,4 +1,7 @@
 export type Side = 'old' | 'new';
+export type { WorkspaceFolders, WorkspaceProject, WorkspacePullRequest, WorkspaceSession, WorkspaceSnapshot } from './workspace';
+export { deriveReview, describeRecheck, discussionThrough, timeOf } from './review';
+export type { DiscussionItem, RecheckReason, ReviewDecision, ReviewDerivation, ReviewSignals } from './review';
 export type FileStatus = 'A' | 'M' | 'D' | 'R';
 
 export interface DiffLine { kind: 'context' | 'add' | 'del'; oldNo: number | null; newNo: number | null; text: string }

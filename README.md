@@ -61,6 +61,113 @@ Other env overrides: `BITBUCKET_API_BASE` (default `https://api.bitbucket.org/2.
 
 ## Use
 
+### Project workspace (daemon mode)
+
+Start Criever once, from any directory:
+
+```sh
+criever daemon
+# Equivalent: criever --daemon
+```
+
+The long-running process opens `http://127.0.0.1:4917`. Leave it running while
+reviewing; Ctrl+C stops it. Use `--no-open` to open the address yourself, or
+`--port <n>` to choose another port (`--port 0` picks an available port).
+It binds only to loopback, not your network interface. It runs in the foreground;
+it does not install an operating-system service.
+
+1. Choose **Add project** and start typing the repository path. Matching folders
+   on the daemon machine appear as you type, including for incomplete names such
+   as `~/pro`. Click a suggestion, or use arrow keys and Enter/Tab to complete it;
+   keep typing to navigate into subfolders. Escape dismisses suggestions without
+   closing the dialog. You can also enter an exact path directly, including `~`
+   or `~/projects/repository` for the daemon user's home directory.
+   Its GitHub.com or Bitbucket Cloud remote determines the provider. Configure
+   credentials as described above; adding a project does not clone a repository.
+2. Open a project to see its open pull requests and which request your review.
+3. Open a PR, choose **Temporary checkout** or **Actual repository**, and confirm.
+   Temporary checkout is the default: an isolated worktree in the system temporary
+   directory (`/tmp` on Linux), leaving your original checkout alone. Actual
+   repository switches your local checkout to the PR commit in detached HEAD;
+   it requires a clean working tree and stays checked out when you leave.
+   Both modes open the usual diff, comments, drafts, and publishing tools.
+4. Return to the project or Projects page whenever you need to switch context.
+   **Mark reviewed** records the revision and discussion you have seen, locally
+   only. It does not approve the PR, publish comments, or change assignments on
+   the provider. It is available from the PR list and from a review session;
+   **Clear reviewed** removes it and restores the status derived from your
+   provider activity. If new discussion arrives on an unchanged commit, the PR
+   needs a recheck again and can be acknowledged again.
+5. The daemon periodically checks for changes while it is running. Refresh
+   checks immediately; provider errors remain visible, and the last successful
+   results stay on screen rather than being presented as current.
+
+### Review filters
+
+| Filter | Shows |
+| --- | --- |
+| **All open** | Every open PR. |
+| **Assigned to me** | Every PR that lists you as a reviewer, including ones you already reviewed. |
+| **Pending** | Assigned PRs where you have no published comment, approval, changes-requested decision, or local acknowledgement. |
+| **Needs recheck** | PRs with new commits or new comments from others since your latest review activity or local acknowledgement. |
+
+Your review activity is any non-deleted comment you published (inline, reply, or
+general) and an explicit approval or changes-requested decision. Being listed as
+a participant does not count. Your own later comments, title edits, and other
+metadata changes never trigger a recheck. Each flagged card says why, using the
+provider's author and timestamp when available, and shows every reason that
+applies:
+
+- `Since your review: PR commits changed.`
+- `Since your review: New comment by Example Reviewer.` for a separate comment
+  from someone else (including a reply in a thread you did not join).
+- `Since your review: Reply in a thread you joined.`
+- `Since your review: Changes requested by Example Reviewer.` (or `Approved`)
+  for another reviewer's decision.
+
+Status and explanations come from one shared derivation, so they cannot
+disagree. A discussion-only change is never described as a code change, and an
+independent comment is never described as a reply.
+
+**Bitbucket specifics.** Bitbucket's list response omits reviewers and
+participants unless asked, so Criever requests
+`fields=+values.reviewers,+values.participants` (with the plus signs encoded)
+and fetches individual PR details if they are still missing. Your identity is the
+UUID returned by `/user`. Provider requests are made with bounded concurrency.
+
+**Initial-sync limitation.** Bitbucket does not record which commit you
+reviewed. The first time Criever sees your review activity on a PR, it compares
+commit dates with the time of that activity and then stores the reviewed
+revision. From then on head changes are detected by revision, including force
+pushes with older commit dates and across daemon restarts. A force push made
+*before* that first sync, whose commit dates are older than your review, cannot
+be detected, and a PR first synced after later commits will show those commits
+as changed. Marking reviewed locally sets an exact baseline. GitHub PRs use
+review requests and local acknowledgement only.
+
+GitHub assignments include direct review requests and team requests when the
+token can read your team memberships. If GitHub denies that lookup, only direct
+requests are identified. Bitbucket assignments use the PR's reviewer list
+matched against your account UUID.
+
+Projects and reviewed revisions survive daemon restarts in
+`CRIEVER_STATE_DIR/workspace.json` (default
+`~/.local/share/criever/workspace.json`). Review drafts retain the existing
+provider/repository/PR storage. Browser review sessions belong to the running
+daemon; after restarting, reopen the PR from its project.
+
+Only one daemon can own a state directory at a time. After an unclean exit, the
+startup error identifies `workspace.lock` and its recorded process ID; remove
+that lock only after confirming the old process has exited. Clean temporary
+worktrees are removed at shutdown; worktrees containing edits or ignored files
+are preserved and their paths are printed. Actual repository checkouts are never
+removed or automatically restored by daemon shutdown.
+
+Daemon mode selects review context in the browser, so `--local`, `--base`, and
+`--head` belong to single-repository mode, not daemon mode.
+
+### Single-repository mode
+
 ```
 cd your-repo
 criever

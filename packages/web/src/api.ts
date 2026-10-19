@@ -1,7 +1,13 @@
 import type { ChangedFile, CommentsResponse, DiffResponse, Draft, PrInfo, PublishResult, SearchHit, Side, TreeEntry, VscodeOpenResponse } from '@criever/shared';
 
+export const reviewSessionId = (() => {
+  const match = window.location.pathname.match(/^\/review\/([^/]+)\/?$/);
+  return match?.[1] ? decodeURIComponent(match[1]) : null;
+})();
+const reviewUrl = (url: string) => reviewSessionId ? url.replace(/^\/api\//, `/api/sessions/${encodeURIComponent(reviewSessionId)}/`) : url;
+
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(url, { ...init, headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) } });
+  const r = await fetch(reviewUrl(url), { ...init, headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) } });
   if (!r.ok) { const e = await r.json().catch(() => ({ error: r.statusText })); throw new Error((e as { error: string }).error); }
   return r.json() as Promise<T>;
 }
@@ -24,7 +30,7 @@ export const api = {
   refresh: () => j<{ ok: true }>('/api/refresh', { method: 'POST' }),
   vscodeOpen: (path: string, line: number) => j<VscodeOpenResponse>('/api/vscode/open', { method: 'POST', body: JSON.stringify({ path, line }) }),
   async publish(onResult: (r: PublishResult) => void): Promise<void> {
-    const r = await fetch('/api/publish', { method: 'POST' });
+    const r = await fetch(reviewUrl('/api/publish'), { method: 'POST' });
     const reader = r.body!.getReader(); const dec = new TextDecoder(); let buf = '';
     for (;;) {
       const { done, value } = await reader.read(); if (done) break;

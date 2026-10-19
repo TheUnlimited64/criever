@@ -33,7 +33,9 @@ export function rawPrToMeta(pr: RawPr): ReviewMeta {
 export class BitbucketProvider implements Provider {
   readonly kind = 'bitbucket' as const;
   constructor(private bb: BitbucketClient, private ws: string, private repo: string, private prId: number) {}
-  async meta(): Promise<ReviewMeta> { return rawPrToMeta(await this.bb.getPr(this.ws, this.repo, this.prId)); }
+  async meta(): Promise<ReviewMeta> {
+    return rawPrToMeta(await this.bb.resolvePr(this.ws, this.repo, await this.bb.getPr(this.ws, this.repo, this.prId)));
+  }
   listComments(): Promise<BbComment[]> { return this.bb.listComments(this.ws, this.repo, this.prId); }
   listCommits(): Promise<PrCommit[]> { return this.bb.listCommits(this.ws, this.repo, this.prId); }
   publishComment(b: PublishBody): Promise<number> { return this.bb.publishComment(this.ws, this.repo, this.prId, b); }

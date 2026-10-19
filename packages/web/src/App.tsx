@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { Side } from '@criever/shared';
 import { api } from './api';
-import { Header } from './components/Header';
+import { Header, type ReviewHeaderContext } from './components/Header';
 import { FilesPane } from './components/FilesPane';
 import { Keymap } from './components/Keymap';
 import { ReviewCodePane } from './components/ReviewCodePane';
@@ -60,14 +60,14 @@ function useKeyboard() {
   }), [s, files, c, invalidate, pr]);
 }
 
-export function App() {
+export function App({ headerContext }: { headerContext?: ReviewHeaderContext }) {
   const files = useFiles(); const { currentPath, openDiff } = useStore();
   const overlay = useStore(s => s.overlay);
   useEffect(() => { if (!currentPath && files.data?.[0]) openDiff(files.data[0].path); }, [files.data, currentPath, openDiff]);
   useKeyboard();
   return (
     <div className="app">
-      <Header />
+      <Header context={headerContext} />
       <div className="main">
         <FilesPane />
         <ReviewCodePane />
