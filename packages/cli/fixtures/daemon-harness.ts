@@ -9,6 +9,8 @@ import { Git } from '../src/git';
 const args = process.argv.slice(2);
 const portIndex = args.indexOf('--port');
 const port = Number(portIndex < 0 ? 4803 : args[portIndex + 1]);
+const hostIndex = args.indexOf('--host');
+const hostname = hostIndex < 0 ? '127.0.0.1' : args[hostIndex + 1]!;
 const root = await mkdtemp(join(tmpdir(), 'criever-daemon-e2e-'));
 const repo = await buildFixtureRepo(join(root, 'review-fixture'));
 const git = new Git(repo.root);
@@ -79,7 +81,7 @@ const start = () => createDaemon({
 });
 let daemon = await start();
 const server = Bun.serve({
-  hostname: '127.0.0.1', port,
+  hostname, port,
   async fetch(req) {
     const path = new URL(req.url).pathname;
     if (path === '/__fixture') return Response.json({ path: repo.root, currentHead: (await git.run(['rev-parse', 'HEAD'])).stdout.trim(), originalHead: repo.c3, firstHead: repo.c2, updatedHead: repo.c3, checkoutCount });
@@ -95,10 +97,21 @@ const server = Bun.serve({
       return Response.json({ ok: true });
     }
     if (path.endsWith('/checkout') && req.method === 'POST') checkoutCount += 1;
+    // Public demo mode forwards to the localhost-only daemon, preserving origin checks.
+    if (hostname === '0.0.0.0') {
+      const external = new URL(req.url);
+      external.host = req.headers.get('host') ?? external.host;
+      const headers = new Headers(req.headers);
+      const internal = new URL(req.url);
+      internal.hostname = '127.0.0.1';
+      headers.set('host', internal.host);
+      if (headers.get('origin') === external.origin) headers.set('origin', internal.origin);
+      return daemon.fetch(new Request(internal, new Request(req, { headers })));
+    }
     return daemon.fetch(req);
   },
 });
-console.log(`daemon fixture ready: http://127.0.0.1:${server.port}`);
+console.log(`daemon fixture ready: http://${hostname}:${server.port}`);
 const stop = async () => {
   await server.stop(true); await daemon.stop(); await stub.stop();
   await rm(root, { recursive: true, force: true }); process.exit(0);
