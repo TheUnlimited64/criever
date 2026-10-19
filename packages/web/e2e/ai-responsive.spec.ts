@@ -53,3 +53,41 @@ test('footer shortcuts stay on one line and the source is reachable on phone and
     expect(bounds && sourceBounds && sourceBounds.y + sourceBounds.height).toBeLessThanOrEqual(800);
   }
 });
+
+test('code keeps the workspace height and AI opens across the daemon layout breakpoints', async ({ page }, testInfo) => {
+  await page.goto('/');
+  for (const width of [375, 600, 768, 1001, 1100, 1199, 1200, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const main = page.locator('.main');
+    const code = page.getByTestId('code');
+    await expect(code).toBeVisible();
+    const workspaceBounds = await main.boundingBox();
+    const codeBounds = await code.boundingBox();
+    expect(codeBounds!.height).toBeGreaterThan(workspaceBounds!.height - 2);
+    const toggle = page.getByRole('navigation', { name: 'Review tools' }).getByRole('button', { name: 'AI', exact: true });
+    await toggle.click();
+    const rail = page.getByTestId('ai-rail');
+    await expect(rail).toBeVisible();
+    const bounds = await rail.boundingBox();
+    expect(bounds!.height).toBeGreaterThan(workspaceBounds!.height - 2);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width + 1);
+    await page.screenshot({ path: testInfo.outputPath(`workspace-ai-${width}.png`) });
+    await page.getByRole('button', { name: 'Close AI chat' }).click();
+    await expect(code).toBeVisible();
+  }
+});
+
+test('desktop AI control belongs to the review toolbar in dark mode', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 2048, height: 1086 });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('/');
+  await page.getByTestId('files/file/package.json').click();
+  const toolbar = page.getByRole('navigation', { name: 'Review tools' });
+  const ai = toolbar.getByRole('button', { name: 'AI', exact: true });
+  await expect(ai).toBeVisible();
+  expect((await ai.boundingBox())!.x).toBeGreaterThan(1024);
+  await page.screenshot({ path: testInfo.outputPath('desktop-dark.png'), fullPage: true });
+  await ai.click();
+  await expect(page.getByTestId('ai-rail')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('desktop-dark-ai.png'), fullPage: true });
+});
