@@ -46,6 +46,26 @@ it('rejects ACP permission requests instead of granting tool access', async () =
   expect(JSON.parse(readFileSync(outcome, 'utf8'))).toEqual({ outcome: 'selected', optionId: 'reject' });
 });
 
+it.each([
+  ['execute', 'allow'],
+  ['read', 'allow'],
+  ['edit', 'reject'],
+  ['delete', 'reject'],
+  ['other', 'reject'],
+])('handles ACP review %s permission as %s', async (kind, expected) => {
+  const root = mkdtempSync(join(tmpdir(), 'criever-acp-setup-'));
+  roots.push(root);
+  const outcome = join(root, 'permission.json');
+  const adapter = new AiAdapter([{
+    id: 'generic', name: 'Generic ACP', kind: 'acp',
+    executable: process.execPath, args: [writeAgent(root)],
+  }], new Git(root));
+  await adapter.run('generic', 'Review with necessary dependency setup', 'patch', {
+    env: { CRIEVER_AI_URL: 'http://127.0.0.1:43123/review', PERMISSION_LOG: outcome, TOOL_KIND: kind },
+  });
+  expect(JSON.parse(readFileSync(outcome, 'utf8'))).toEqual({ outcome: 'selected', optionId: expected });
+});
+
 it('passes the review capability only to the ACP child and hides final review prose', async () => {
   const root = mkdtempSync(join(tmpdir(), 'criever-acp-review-'));
   roots.push(root);
@@ -162,8 +182,8 @@ for await (const line of input) {
         method: 'session/request_permission',
         params: {
           sessionId: 'session-1',
-          toolCall: { toolCallId: 'tool-1', title: 'Run command', kind: 'execute', status: 'pending' },
-          options: [{ optionId: 'reject', name: 'Reject', kind: 'reject_once' }],
+          toolCall: { toolCallId: 'tool-1', title: 'Run command', kind: process.env.TOOL_KIND ?? 'execute', status: 'pending' },
+          options: [{ optionId: 'allow', name: 'Allow once', kind: 'allow_once' }, { optionId: 'reject', name: 'Reject', kind: 'reject_once' }],
         },
       });
     } else {

@@ -13,8 +13,8 @@ export function reviewArgs(kind: LegacyHarnessKind, context: ReviewLaunch): stri
       return [
       '-p', '--output-format', 'text', '--permission-mode', 'dontAsk',
       '--settings', JSON.stringify({
-        permissions: { allow: ['Read', 'Glob', 'Grep', 'Skill', 'Task', `Bash(${context.command} *)`, 'Bash(git show *)', 'Bash(git diff *)', 'Bash(git grep *)', 'Bash(git log *)'], deny: ['Edit', 'Write', 'NotebookEdit'] },
-        sandbox: { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false, filesystem: { denyWrite: [context.repository] }, network: { allowedDomains: ['127.0.0.1'] } },
+        permissions: { allow: ['Read', 'Glob', 'Grep', 'Skill', 'Task', 'Bash'], deny: ['Edit', 'Write', 'NotebookEdit'] },
+        sandbox: { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false, filesystem: { denyWrite: [`${context.repository}/.git`] }, network: { allowedDomains: ['127.0.0.1', '*'] } },
       }),
       ];
     }
@@ -22,10 +22,10 @@ export function reviewArgs(kind: LegacyHarnessKind, context: ReviewLaunch): stri
       return [
       'exec', '--ignore-user-config', '--strict-config', '--json',
       '-c', 'default_permissions="criever_review"',
-      '-c', 'permissions.criever_review.extends=":read-only"',
+      '-c', 'permissions.criever_review.extends=":workspace"',
       '-c', 'permissions.criever_review.network.enabled=true',
       '-c', 'features.network_proxy=true',
-      '-c', 'permissions.criever_review.network.domains={"127.0.0.1"="allow"}',
+      '-c', 'permissions.criever_review.network.domains={"127.0.0.1"="allow","*"="allow"}',
       '-',
       ];
     }
@@ -34,11 +34,11 @@ export function reviewArgs(kind: LegacyHarnessKind, context: ReviewLaunch): stri
   }
 }
 
-export function reviewEnvironment(command: string): Record<string, string> {
+export function reviewEnvironment(): Record<string, string> {
   return {
     OPENCODE_PERMISSION: JSON.stringify({
       edit: 'deny',
-      bash: { '*': 'deny', 'git show *': 'allow', 'git diff *': 'allow', 'git grep *': 'allow', 'git log *': 'allow', 'git ls-tree *': 'allow', [`${command} *`]: 'allow' },
+      bash: { '*': 'allow' },
     }),
   };
 }

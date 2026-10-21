@@ -55,7 +55,7 @@ export async function runAcpHarness(
   try {
     const stream = acp.ndJsonStream(createInput(child.stdin), child.stdout);
     await acp.client({ name: 'criever' })
-      .onRequest(acp.methods.client.session.requestPermission, ctx => rejectPermission(ctx.params))
+      .onRequest(acp.methods.client.session.requestPermission, ctx => reviewPermission(ctx.params, mode))
       .connectWith(stream, async ctx => {
         const initialized = await ctx.request(acp.methods.agent.initialize, {
           protocolVersion: acp.PROTOCOL_VERSION,
@@ -101,7 +101,13 @@ export async function runAcpHarness(
   return mode === 'patch' ? '' : output.join('').trim();
 }
 
-async function rejectPermission(params: acp.RequestPermissionRequest): Promise<acp.RequestPermissionResponse> {
+async function reviewPermission(params: acp.RequestPermissionRequest, mode: 'chat' | 'patch'): Promise<acp.RequestPermissionResponse> {
+  // Review commands include dependency setup and validation. File-edit requests
+  // remain denied; the review prompt constrains commands to preserving tracked files.
+  if (mode === 'patch' && ['read', 'search', 'execute'].includes(params.toolCall.kind ?? '')) {
+    const allow = params.options.find(item => item.kind === 'allow_once');
+    if (allow) return { outcome: { outcome: 'selected', optionId: allow.optionId } };
+  }
   const option = params.options.find(item => item.kind === 'reject_once' || item.kind === 'reject_always');
   return option
     ? { outcome: { outcome: 'selected', optionId: option.optionId } }

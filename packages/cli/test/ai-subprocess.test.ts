@@ -2,13 +2,13 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AiAdapter } from '../src/ai';
+import { AiAdapter, reviewPrompt } from '../src/ai';
 import { Git } from '../src/git';
 
 const dirs: string[] = [];
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
-it('keeps Codex read-only while allowing review skills to orchestrate review work', async () => {
+it('allows Codex review setup in the workspace with registry access while keeping chat read-only', async () => {
   const root = mkdtempSync(join(tmpdir(), 'criever-codex-'));
   dirs.push(root);
   const executable = join(root, 'codex.sh');
@@ -24,14 +24,17 @@ it('keeps Codex read-only while allowing review skills to orchestrate review wor
   expect(patch).toBe('');
   expect(patchArgs).not.toContain('--sandbox read-only');
   expect(patchArgs).toContain('--json');
+  expect(patchArgs).toContain('permissions.criever_review.extends=":workspace"');
+  expect(patchArgs).toContain('permissions.criever_review.network.enabled=true');
+  expect(chat).toContain('--sandbox read-only');
   expect(patchArgs).toContain('default_permissions="criever_review"');
-  expect(patchArgs).toContain('permissions.criever_review.network.domains={"127.0.0.1"="allow"}');
+  expect(patchArgs).toContain('permissions.criever_review.network.domains={"127.0.0.1"="allow","*"="allow"}');
   expect(patchArgs).not.toContain('features.plugins=false');
   expect(chat).toContain('features.plugins=false');
   expect(chat).toContain('--disable multi_agent');
 });
 
-it('keeps OpenCode reviews read-only without disabling review plugins', async () => {
+it('allows OpenCode dependency setup and checks without disabling review plugins', async () => {
   const root = mkdtempSync(join(tmpdir(), 'criever-opencode-'));
   dirs.push(root);
   const executable = join(root, 'opencode.sh');
@@ -44,13 +47,12 @@ it('keeps OpenCode reviews read-only without disabling review plugins', async ()
   const invocation = JSON.parse(readFileSync(argsLog, 'utf8')) as { permission: { edit: string; bash: Record<string, string> }; args: string };
   expect(patch).toBe('');
   expect(invocation.permission.edit).toBe('deny');
-  expect(invocation.permission.bash['*']).toBe('deny');
-  expect(invocation.permission.bash['/bin/criever --ai *']).toBe('allow');
+  expect(invocation.permission.bash['*']).toBe('allow');
   expect(invocation.args).toContain('run --agent build --format json');
   expect(invocation.args).not.toContain('--pure');
 });
 
-it('gives Claude reviews loopback TCP access without Unix socket permissions', async () => {
+it('allows Claude review setup and network access inside the sandbox', async () => {
   const root = mkdtempSync(join(tmpdir(), 'criever-claude-'));
   dirs.push(root);
   const executable = join(root, 'claude.sh');
@@ -61,7 +63,11 @@ it('gives Claude reviews loopback TCP access without Unix socket permissions', a
   const argsLog = join(root, 'args.log');
   await adapter.run('claude', 'Review the changes', 'patch', { env: { ARGS_LOG: argsLog, CRIEVER_AI_URL: 'http://127.0.0.1:4955/review' } });
   const args = readFileSync(argsLog, 'utf8');
-  expect(args).toContain('"allowedDomains":["127.0.0.1"]');
+  expect(args).toContain('"allowedDomains":["127.0.0.1","*"]');
+  expect(args).toContain('"Bash"');
+  expect(args).toContain('"enabled":true');
+  expect(args).toContain('"allowUnsandboxedCommands":false');
+  expect(args).toContain(JSON.stringify({ denyWrite: [join(root, '.git')] }));
   expect(args).not.toContain('allowUnixSockets');
 });
 
@@ -94,4 +100,14 @@ it('stops an active harness before session cleanup and rejects new work', async 
   await adapter.stop();
   expect(await outcome).toBe('stopped');
   await expect(adapter.run('test', 'New question')).rejects.toThrow('shutting down');
+});
+
+it('instructs fresh checkout reviews to install pinned dependencies and preserve user changes', () => {
+  const prompt = reviewPrompt('diff', 'base-sha', 'head-sha');
+  expect(prompt).toContain('install them rather than stopping at missing packages');
+  expect(prompt).toContain('frozen-lockfile');
+  expect(prompt).toContain('writable temporary directory');
+  expect(prompt).toContain('separate temporary checkout of the pinned revision');
+  expect(prompt).toContain("never reset or clean the user's worktree");
+  expect(prompt).not.toContain('Do not install dependencies');
 });
