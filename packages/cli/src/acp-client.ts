@@ -1,7 +1,7 @@
 import * as acp from '@agentclientprotocol/sdk';
 import type { AcpHarness } from './config';
 
-const CHAT_TIMEOUT_MS = 120_000;
+const CHAT_TIMEOUT_MS = 1_800_000;
 const REVIEW_TIMEOUT_MS = 1_800_000;
 const MAX_OUTPUT_BYTES = 1_000_000;
 const MAX_STDERR_BYTES = 64_000;
@@ -11,6 +11,7 @@ type Environment = Readonly<Record<string, string | undefined>>;
 export interface AcpRunOptions {
   readonly env?: Environment;
   readonly signal?: AbortSignal;
+  readonly onProgress?: (message: string) => void;
 }
 
 export async function runAcpHarness(
@@ -65,6 +66,7 @@ export async function runAcpHarness(
           throw new Error(`ACP protocol version ${initialized.protocolVersion} is unsupported`);
         }
         return ctx.buildSession(cwd).withSession(async session => {
+          options?.onProgress?.('Thinking about your question');
           const promptResult = session.prompt(prompt);
           for (;;) {
             const message = await session.nextUpdate();
@@ -75,6 +77,9 @@ export async function runAcpHarness(
               return result;
             }
             const update = message.notification.update;
+            if (update.sessionUpdate === 'agent_thought_chunk') options?.onProgress?.('Thinking about your question');
+            if (update.sessionUpdate === 'tool_call') options?.onProgress?.('Inspecting code');
+            if (update.sessionUpdate === 'agent_message_chunk') options?.onProgress?.('Receiving AI response');
             if (update.sessionUpdate !== 'agent_message_chunk' || update.content.type !== 'text') continue;
             outputBytes += Buffer.byteLength(update.content.text, 'utf8');
             if (outputBytes > MAX_OUTPUT_BYTES) throw new Error('ACP output exceeded limit');

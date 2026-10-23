@@ -21,6 +21,7 @@ export function AiRail() {
   const [question, setQuestion] = useState('');
   const questionVersion = useRef(0);
   const [chatBusy, setChatBusy] = useState(false);
+  const [chatProgress, setChatProgress] = useState('Starting AI');
   const [reviewing, setReviewing] = useState(0);
   const [tab, setTab] = useState<'chat' | 'findings'>('chat');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -35,15 +36,15 @@ export function AiRail() {
   const id = state?.harnesses.some(harness => harness.id === selectedHarnessId) ? selectedHarnessId : state?.harnesses[0]?.id ?? '';
   const threads = Object.entries(state?.threads ?? {});
   const general = state?.threads[`general:${pr?.sourceHead}`] ?? state?.conversation ?? [];
-  const contextual = threads.filter(([threadId]) => !threadId.startsWith('general:'));
+  const contextual = threads.filter(([threadId]) => !threadId.startsWith('general:') && !threadId.startsWith('lookout:'));
   const refresh = async () => queryClient.invalidateQueries({ queryKey: ['ai'] });
 
   const chat = async () => {
     if (!id || !question.trim()) return;
     const submittedVersion = questionVersion.current;
-    setChatBusy(true); setError('');
+    setChatBusy(true); setError(''); setChatProgress('Starting AI');
     try {
-      await api.aiChat({ harnessId: id, message: question.trim() });
+      await api.aiChat({ harnessId: id, message: question.trim() }, setChatProgress);
       if (questionVersion.current === submittedVersion) setQuestion('');
       await refresh();
     } catch (cause) {
@@ -108,7 +109,7 @@ export function AiRail() {
       <section className="ai-conversation"><h3>Conversation</h3>
         {!general.length && <p className="ai-empty">Ask a question about this review. Your conversation stays here, not in the published review.</p>}
         <div data-testid="ai/general-messages">{general.map((message, index) => <AiMessageView message={message} key={`${message.role}-${index}`} />)}</div>
-        {chatBusy && <AiActivity label="Thinking about your question" />}
+        {chatBusy && <p role="status" aria-atomic="true">{chatProgress}</p>}
       </section>
       <section className="ai-context-list"><h3>Questions on code</h3>
         {!contextual.length && <p className="ai-empty">Ask from a file header or choose private AI after opening a line with +. The thread stays with the code.</p>}

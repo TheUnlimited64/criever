@@ -111,3 +111,19 @@ it('instructs fresh checkout reviews to install pinned dependencies and preserve
   expect(prompt).toContain("never reset or clean the user's worktree");
   expect(prompt).not.toContain('Do not install dependencies');
 });
+
+it('lets private questions think beyond two minutes and reports response activity', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'criever-long-chat-'));
+  dirs.push(root);
+  const executable = join(root, 'harness.sh');
+  writeFileSync(executable, '#!/bin/sh\nsleep 0.2\nprintf "<answer>Done</answer>"\n', { mode: 0o755 });
+  const adapter = new AiAdapter([{ id: 'test', name: 'Test', kind: 'claude', executable }], new Git(root));
+  const progress: string[] = [];
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    const answer = adapter.run('test', 'Think carefully', 'chat', { onProgress: message => progress.push(message) });
+    vi.advanceTimersByTime(120_001);
+    await expect(answer).resolves.toBe('<answer>Done</answer>');
+    expect(progress).toEqual(['Thinking about your question', 'Receiving AI response']);
+  } finally { vi.useRealTimers(); }
+});

@@ -171,9 +171,9 @@ test('review and private questions show visible working states while the harness
   await page.getByRole('tab', { name: 'Chat', exact: true }).click();
   await page.getByLabel('General question').fill('What changed?');
   await page.getByRole('button', { name: 'Ask AI', exact: true }).click();
-  await expect(page.getByRole('status', { name: 'Thinking about your question' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Starting AI' })).toBeVisible();
   resumeChat();
-  await expect(page.getByRole('status', { name: 'Thinking about your question' })).toHaveCount(0);
+  await expect(page.getByRole('status').filter({ hasText: 'Starting AI' })).toHaveCount(0);
 });
 
 test('a phone reviewer can choose another file without a keyboard', async ({ page }) => {

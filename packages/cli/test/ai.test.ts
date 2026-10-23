@@ -59,6 +59,76 @@ const waitReview = async (f: Awaited<ReturnType<typeof fixture>>, response: Resp
 const reviewDeps = (f: Awaited<ReturnType<typeof fixture>>, adapter: AiRunner = f.runner) => ({ adapter: withReviewEvents(adapter), store: f.store, git: f.git, meta: f.meta, base: f.base, reviewChannel: f.reviewChannel });
 
 describe('AI review HTTP contract', () => {
+  it('discusses look-outs with their recorded context and isolated follow-up history', async () => {
+    const f = await fixture();
+    const deps = reviewDeps(f);
+    await waitReview(f, await aiEndpoint(request('POST', '/api/ai/review', { harnessId: 'fake' }), '/api/ai/review', deps));
+    const lookout = (await f.store.loadAiLookouts())[0]!;
+    const sent: string[] = [];
+    const adapter: AiRunner = { ...f.runner, run: async (_id, prompt) => { sent.push(prompt); return '<answer>A simple explanation</answer>'; } };
+    const chatDeps = { ...deps, adapter };
+    const ask = async (body: Record<string, unknown>) => aiEndpoint(request('POST', '/api/ai/chat', { harnessId: 'fake', message: 'Explain simply', ...body }), '/api/ai/chat', chatDeps);
+    expect((await ask({ lookoutId: lookout.id }))?.status).toBe(200);
+    expect(sent[0]).toContain(lookout.body);
+    expect(sent[0]).toContain('const changed = true;');
+    expect(sent[0]).toContain('unconfirmed concern, not a proven defect');
+    expect((await ask({ lookoutId: lookout.id, message: 'What should I check?' }))?.status).toBe(200);
+    expect(sent[1]).toContain('assistant: A simple explanation');
+    expect(sent[1]).toContain('user: What should I check?');
+    expect((await f.store.loadAiThreads())[`lookout:${encodeURIComponent(lookout.id)}`]).toHaveLength(4);
+    expect(await f.store.loadAiConversation()).toEqual([]);
+    expect(f.store.state.drafts).toEqual([]);
+    expect((await ask({ lookoutId: 'missing' }))?.status).toBe(404);
+    expect((await ask({ lookoutId: lookout.id, path: 'a.ts' }))?.status).toBe(400);
+    expect(sent).toHaveLength(2);
+    await f.store.mutateAiCollections((_findings, lookouts) => {
+      lookouts.push({ id: 'unanchored', body: 'Check the deployment contract' });
+      lookouts.push({ ...lookout, id: 'stale', anchorCommit: f.base });
+    });
+    expect((await ask({ lookoutId: 'unanchored' }))?.status).toBe(200);
+    expect(sent[2]).toContain('Check the deployment contract');
+    expect(sent[2]).not.toContain('A simple explanation');
+    expect((await ask({ lookoutId: 'stale' }))?.status).toBe(200);
+    expect(sent[3]).toContain('earlier revision');
+    expect(sent[3]).not.toContain('const changed = true;');
+  });
+
+  it('runs private questions in the background and exposes progress, completion, and failures', async () => {
+    const f = await fixture();
+    let finish!: (output: string) => void;
+    let progress!: (message: string) => void;
+    const adapter: AiRunner = { ...f.runner, run: async (_id, _prompt, _mode, options) => {
+      progress = options!.onProgress!;
+      return new Promise<string>(resolve => { finish = resolve; });
+    } };
+    const deps = { ...reviewDeps(f), adapter };
+    const start = async () => {
+      const req = request('POST', '/api/ai/chat', { harnessId: 'fake', message: 'Slow question' });
+      req.headers.set('prefer', 'respond-async');
+      const response = await aiEndpoint(req, '/api/ai/chat', deps);
+      expect(response?.status).toBe(202);
+      return await response!.json() as { runId: string };
+    };
+    const poll = async (id: string) => {
+      const path = `/api/ai/chat/${id}`;
+      return (await aiEndpoint(request('GET', path), path, deps))!.json() as Promise<{ status: string; message: string; answer?: string; error?: string }>;
+    };
+    const job = await start();
+    progress('Inspecting code');
+    expect(await poll(job.runId)).toMatchObject({ status: 'running', message: 'Inspecting code' });
+    expect(await f.store.loadAiThreads()).toEqual({});
+    finish('<answer>Slow answer</answer>');
+    await vi.waitFor(async () => expect(await poll(job.runId)).toMatchObject({ status: 'complete', answer: 'Slow answer' }));
+    expect((await f.store.loadAiThreads())[`general:${f.head}`]).toHaveLength(2);
+    const failed = await start();
+    finish('No final answer');
+    await vi.waitFor(async () => expect(await poll(failed.runId)).toMatchObject({ status: 'failed', error: expect.stringContaining('final answer') }));
+    expect((await f.store.loadAiThreads())[`general:${f.head}`]).toHaveLength(2);
+    const other = await fixture();
+    const path = `/api/ai/chat/${job.runId}`;
+    expect((await aiEndpoint(request('GET', path), path, reviewDeps(other)))?.status).toBe(404);
+  });
+
   it.each(['/api/ai/review', '/api/ai/chat'])('keeps the %s request open while the harness runs', async path => {
     const f = await fixture(); const timeout = vi.fn();
     const req = request('POST', path, { harnessId: 'fake', message: 'Check the change' });

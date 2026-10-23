@@ -6,7 +6,7 @@ import type { Git } from './git';
 
 const OUTPUT_LIMIT = 1_000_000;
 const INPUT_LIMIT = 2_000_000;
-const TIMEOUT_MS = 120_000;
+const TIMEOUT_MS = 1_800_000;
 const REVIEW_TIMEOUT_MS = 1_800_000;
 export interface AiFindingCandidate { readonly path: string; readonly line: number; readonly side: 'old' | 'new'; readonly body: string; readonly severity: 'info' | 'warning' | 'error' }
 export interface AiReviewResult { readonly findings: readonly AiFindingCandidate[]; readonly lookouts: readonly { readonly body: string; readonly path: string; readonly line: number; readonly side: 'old' | 'new' }[] }
@@ -19,6 +19,7 @@ export interface AiRunner {
 export interface AiRunOptions {
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly signal?: AbortSignal;
+  readonly onProgress?: (message: string) => void;
 }
 
 export class AiAdapter implements AiRunner {
@@ -60,12 +61,13 @@ export class AiAdapter implements AiRunner {
       env: { ...inherited, ...(mode === 'patch' && harness.kind === 'opencode' ? reviewEnvironment() : {}), ...options?.env },
       ...(signal ? { signal } : {}),
     });
+    options.onProgress?.('Thinking about your question');
     let timedOut = false;
     let exceededLimit = false;
     const timer = setTimeout(() => { timedOut = true; proc.kill(); }, mode === 'patch' ? REVIEW_TIMEOUT_MS : TIMEOUT_MS);
     try {
       const [stdout, stderr, code] = await Promise.all([
-        mode === 'patch' ? drain(proc.stdout) : readCapped(proc.stdout, () => { exceededLimit = true; proc.kill(); }),
+        mode === 'patch' ? drain(proc.stdout) : readCapped(proc.stdout, () => { exceededLimit = true; proc.kill(); }, () => options.onProgress?.('Receiving AI response')),
         readCapped(proc.stderr, () => { exceededLimit = true; proc.kill(); }),
         proc.exited,
       ]);
@@ -84,7 +86,7 @@ async function drain(stream: ReadableStream<Uint8Array>): Promise<string> {
   return '';
 }
 
-async function readCapped(stream: ReadableStream<Uint8Array>, overLimit: () => void): Promise<string> {
+async function readCapped(stream: ReadableStream<Uint8Array>, overLimit: () => void, onOutput?: () => void): Promise<string> {
   const reader = stream.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -94,6 +96,7 @@ async function readCapped(stream: ReadableStream<Uint8Array>, overLimit: () => v
       if (done) break;
       size += value.byteLength;
       if (size > OUTPUT_LIMIT) { overLimit(); await reader.cancel(); break; }
+      onOutput?.();
       chunks.push(value);
     }
   } finally {

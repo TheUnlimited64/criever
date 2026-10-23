@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AiFinding, AiLookout, AiMessage, Side } from '@criever/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
@@ -8,7 +8,7 @@ import { AiActivity } from './AiActivity';
 import { AiMessageView, AiResultBody } from './AiMessageView';
 
 interface AiAnchor { readonly path: string; readonly line: number; readonly side: Side }
-type AiQuestionTarget = AiAnchor | { readonly path: string };
+type AiQuestionTarget = AiAnchor | { readonly path: string } | { readonly lookoutId: string; readonly path?: never };
 
 export function AiFindingCard({ finding, harnessId, onChange }: { finding: AiFinding; harnessId: string; onChange: () => void }) {
   const [editing, setEditing] = useState(false);
@@ -41,7 +41,22 @@ export function AiFindingCard({ finding, harnessId, onChange }: { finding: AiFin
 export function AiLookoutCard({ lookout }: { lookout: AiLookout }) {
   return <article className="ai-guidance lookout" data-testid={`ai/lookout/${lookout.id}`}>
     <span>{lookout.path ? `Look at this · ${lookout.path}:${lookout.line ?? '—'}` : 'Look at this'}</span><AiResultBody body={lookout.body} />
+    <AiLookoutDiscussion lookout={lookout} />
   </article>;
+}
+
+export function AiLookoutDiscussion({ lookout }: { lookout: AiLookout }) {
+  const [open, setOpen] = useState(false);
+  const ai = useQuery({ queryKey: ['ai'], queryFn: api.ai });
+  const messages = ai.data?.threads[`lookout:${encodeURIComponent(lookout.id)}`] ?? [];
+  return <div className="ai-lookout-discussion" data-testid={`ai/lookout-discussion/${lookout.id}`}>
+    <button type="button" className="btn sm ghost" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? 'Close discussion' : messages.length ? 'Continue discussion' : 'Discuss look-out'}</button>
+    {open && <section className="ai-thread-inline" aria-label="Private look-out discussion">
+      <strong>Private discussion</strong>
+      {messages.map((message, index) => <AiMessageView message={message} key={`${message.role}-${index}`} />)}
+      <AiQuestionComposer target={{ lookoutId: lookout.id }} followUp initialQuestion={messages.length ? '' : 'Can you explain this look-out in simpler terms, with an example?'} onCancel={() => setOpen(false)} onSent={() => {}} />
+    </section>}
+  </div>;
 }
 
 export function AiThreadCard({ threadId, messages }: { threadId: string; messages: readonly AiMessage[] }) {
@@ -60,9 +75,14 @@ export function AiThreadCard({ threadId, messages }: { threadId: string; message
   </article>;
 }
 
-export function AiQuestionComposer({ target, onCancel, onSent, followUp = false }: { target: AiQuestionTarget; onCancel: () => void; onSent: () => void; followUp?: boolean }) {
-  const [question, setQuestion] = useState('');
+export function AiQuestionComposer({ target, onCancel, onSent, followUp = false, initialQuestion = '' }: { initialQuestion?: string; target: AiQuestionTarget; onCancel: () => void; onSent: () => void; followUp?: boolean }) {
+  const [question, setQuestion] = useState(initialQuestion);
   const questionVersion = useRef(0);
+  const mounted = useRef(true);
+  const dismissed = useRef(false);
+  const closeQuestion = () => { dismissed.current = true; onCancel(); };
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const [progress, setProgress] = useState('Starting AI');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const query = useQueryClient();
@@ -75,25 +95,27 @@ export function AiQuestionComposer({ target, onCancel, onSent, followUp = false 
   const submit = async () => {
     if (!question.trim() || !harnessId) return;
     const submittedVersion = questionVersion.current;
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setProgress('Starting AI');
     try {
-      const response = await api.aiChat({ harnessId, message: question.trim(), ...target });
-      setThreadClosed(response.threadId, false);
+      const response = await api.aiChat({ harnessId, message: question.trim(), ...target }, setProgress);
+      if (!followUp) setThreadClosed(response.threadId, dismissed.current);
       await query.invalidateQueries({ queryKey: ['ai'] });
-      if (questionVersion.current === submittedVersion) { setQuestion(''); onSent(); }
+      if (mounted.current && questionVersion.current === submittedVersion) { setQuestion(''); onSent(); }
     } catch (cause) {
       if (cause instanceof Error) setError(cause.message); else throw cause;
     } finally { setBusy(false); }
   };
   const isLine = 'line' in target;
-  return <section className={`ai-question${followUp ? ' follow-up' : ''}`} aria-label={`Private Q&A about ${target.path}${isLine ? `:${target.line}` : ''}`}>
-    {!followUp && <header className="ai-question-heading"><strong>{isLine ? `Ask about line ${target.line}` : 'Ask about this file'}</strong><code title={target.path}>{target.path}{isLine ? `:${target.line}` : ''}</code></header>}
-    <label className="ai-question-label"><span className="sr-only">{followUp ? 'Follow-up question' : isLine ? 'Private question' : 'Private file question'}</span><textarea autoFocus={!followUp} aria-label={followUp ? 'Follow-up question' : isLine ? 'Private question' : 'Private file question'} placeholder={followUp ? 'Ask a follow-up about this code…' : 'Ask a question about this code…'} value={question} onChange={event => { questionVersion.current++; setQuestion(event.target.value); }} /></label>
+  const isLookout = 'lookoutId' in target;
+  const questionLabel = isLookout ? 'Look-out question' : followUp ? 'Follow-up question' : isLine ? 'Private question' : 'Private file question';
+  return <section className={`ai-question${followUp ? ' follow-up' : ''}`} aria-label={isLookout ? 'Question about this look-out' : `Private Q&A about ${target.path}${isLine ? `:${target.line}` : ''}`}>
+    {!followUp && <header className="ai-question-heading"><strong>{isLine ? `Ask about line ${target.line}` : 'Ask about this file'}</strong><button type="button" className="btn sm ghost" aria-label="Close private question" onClick={closeQuestion}>Close</button><code title={target.path}>{target.path}{isLine ? `:${target.line}` : ''}</code></header>}
+    <label className="ai-question-label"><span className="sr-only">{questionLabel}</span><textarea autoFocus={!followUp} aria-label={questionLabel} placeholder={isLookout ? 'Ask about this look-out…' : followUp ? 'Ask a follow-up about this code…' : 'Ask a question about this code…'} value={question} onChange={event => { questionVersion.current++; setQuestion(event.target.value); }} /></label>
     <label className="ai-label ai-question-harness">Harness<select aria-label="Private AI harness" className="btn sm" value={harnessId} disabled={busy || !harnesses.length} onChange={event => setSelectedHarnessId(event.target.value)}>{harnesses.map(harness => <option value={harness.id} key={harness.id}>{harness.name}</option>)}</select></label>
     {!harnesses.length && !ai.isLoading && <p className="ai-empty">Configure an AI harness before asking a question.</p>}
     {error && <p role="alert" className="ai-error">{error}</p>}
-    {busy && <AiActivity label="Thinking about your question" />}
-    <div className="ai-question-footer">{!followUp && <small>Private to this review · not a PR comment</small>}<div className="ai-actions"><button className="btn sm ai-submit" aria-label={followUp ? 'Send follow-up' : 'Send private question'} disabled={busy || !harnessId || !question.trim()} onClick={submit}>{followUp ? 'Send follow-up' : 'Ask privately'}</button>{!followUp && <button className="btn sm ghost" onClick={onCancel}>Cancel</button>}</div></div>
+    {busy && <p role="status" aria-atomic="true">{progress}</p>}
+    <div className="ai-question-footer">{!followUp && <small>Private to this review · not a PR comment</small>}<div className="ai-actions"><button className="btn sm ai-submit" aria-label={isLookout ? 'Send look-out question' : followUp ? 'Send follow-up' : 'Send private question'} disabled={busy || !harnessId || !question.trim()} onClick={submit}>{isLookout ? 'Send' : followUp ? 'Send follow-up' : 'Ask privately'}</button>{!followUp && <button className="btn sm ghost" onClick={closeQuestion}>Cancel</button>}</div></div>
   </section>;
 }
 
