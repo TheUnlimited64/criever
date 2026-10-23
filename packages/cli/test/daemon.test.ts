@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { buildFixtureRepo } from '../fixtures/repo';
 import { createDaemon } from '../src/daemon';
 import { Git } from '../src/git';
+import { AiAdapter } from '../src/ai';
 import { StateStore } from '../src/state';
 import * as vscode from '../src/vscode';
 import type { WorkspaceProject, WorkspaceSession, WorkspaceSnapshot } from '@criever/shared';
@@ -116,16 +117,16 @@ async function setup(provider: 'github' | 'bitbucket' = 'bitbucket', pollInterva
     return fetch(provider === 'github' ? new URL(u.pathname + u.search, stub.url) : input, init);
   }, { preconnect: fetch.preconnect });
   const opts = {
-    env: { HOME: root, CRIEVER_STATE_DIR: join(root, 'state'), CRIEVER_CACHE_DIR: join(root, 'cache'), BITBUCKET_API_BASE: `${stub.url}2.0`,
+    env: { XDG_CONFIG_HOME: join(root, 'config'), HOME: root, CRIEVER_STATE_DIR: join(root, 'state'), CRIEVER_CACHE_DIR: join(root, 'cache'), BITBUCKET_API_BASE: `${stub.url}2.0`,
       ATLASSIAN_USER_EMAIL: 'me', ATLASSIAN_API_TOKEN: 'token', GITHUB_TOKEN: 'token' },
     cwd: root, staticDir: null, log: (message: string) => { logs.push(message); }, fetch: injected, pollIntervalMs,
   };
   let daemon = await createDaemon(opts);
   cleanups.push(() => daemon.stop());
-  const call = async (method: string, path: string, body?: unknown, headers?: HeadersInit) => {
+  const call = async (method: string, path: string, body?: unknown, headers?: HeadersInit, server?: { timeout(request: Request, seconds: number): void }) => {
     const response = await daemon.fetch(new Request('http://127.0.0.1:4917' + path, {
       method, ...(body === undefined ? {} : { body: JSON.stringify(body) }), headers,
-    }));
+    }), server);
     if (path.endsWith('/checkout') && response.ok) {
       const session: WorkspaceSession = await response.clone().json();
       if (session.checkoutTarget === 'temporary') temporaryPaths.add(session.checkoutPath);
@@ -171,6 +172,50 @@ async function setup(provider: 'github' | 'bitbucket' = 'bitbucket', pollInterva
 }
 
 describe('daemon workspace integration', () => {
+  it.each(['github', 'bitbucket'] as const)('runs private AI in %s daemon sessions and persists results', async provider => {
+    const f = await setup(provider);
+    await mkdir(join(f.root, 'config', 'criever'), { recursive: true });
+    // Legacy harness wrapper executes a real child in the session checkout.
+    const executable = join(f.root, 'harness');
+    await writeFile(executable, `#!/bin/sh\nexec "${process.execPath}" "${join(import.meta.dirname, '../fixtures/daemon-ai.ts')}"\n`, { mode: 0o755 });
+    await writeFile(join(f.root, 'config', 'criever', 'config.json'), JSON.stringify({ harnesses: [{ id: 'test', name: 'Test AI', kind: 'claude', executable }] }));
+    const project = await f.add();
+    const checkout = async () => {
+      const response = await f.call('POST', `/api/workspace/projects/${project.id}/prs/241/checkout`, { confirmed: true });
+      expect(response.status).toBe(200);
+      return response.json() as Promise<WorkspaceSession>;
+    };
+    const session = await checkout();
+    const api = `/api/sessions/${session.id}/ai`;
+    const state = await (await f.call('GET', api)).json();
+    expect(state.harnesses).toEqual([{ id: 'test', name: 'Test AI', kind: 'claude' }]);
+    const timeout = vi.fn();
+    const chat = await f.call('POST', `${api}/chat`, { harnessId: 'test', message: 'Explain this change' }, { 'content-type': 'application/json' }, { timeout });
+    expect(timeout).toHaveBeenCalledWith(expect.objectContaining({ url: `http://127.0.0.1:4917${api}/chat` }), 0);
+    expect(chat.status, await chat.clone().text()).toBe(200);
+    expect((await chat.json()).answer).toContain(session.checkoutPath);
+    const review = await f.call('POST', `${api}/review`, { harnessId: 'test' }, { 'content-type': 'application/json' });
+    expect(review.status, await review.clone().text()).toBe(202);
+    await vi.waitFor(async () => {
+      const state = await (await f.call('GET', api)).json();
+      expect(state.reviewRuns).toHaveLength(1);
+      expect(state.activeReviews.every((run: { status: string }) => run.status === 'complete')).toBe(true);
+    });
+    expect(f.publishCalls()).toBe(0);
+    expect((await f.call('GET', '/api/ai')).status).toBe(404);
+    expect((await f.call('GET', '/api/sessions/missing/ai')).status).toBe(404);
+    expect((await f.call('POST', `${api}/chat`, {}, { origin: 'https://foreign.test', 'content-type': 'application/json' })).status).toBe(403);
+    const stop = vi.spyOn(AiAdapter.prototype, 'stop');
+    await f.restart();
+    expect(stop).toHaveBeenCalled();
+    expect(existsSync(session.checkoutPath)).toBe(false);
+    expect((await f.call('GET', api)).status).toBe(404);
+    const restored = await checkout();
+    const saved = await (await f.call('GET', `/api/sessions/${restored.id}/ai`)).json();
+    expect(saved.reviewRuns).toHaveLength(1);
+    expect(saved.threads[`general:${session.sourceHead}`]).toHaveLength(2);
+  });
+
   it('checks out abbreviated Bitbucket source and destination commits as canonical revisions', async () => {
     const f = await setup('bitbucket', 60_000, true);
     const p = await f.add();

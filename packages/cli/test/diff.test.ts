@@ -87,6 +87,20 @@ describe('parseUnifiedDiff', () => {
   it('flags binary files', () => {
     expect(parseUnifiedDiff(BINARY)[0]).toMatchObject({ binary: true, hunks: [] });
   });
+  it('uses real paths for a space-suffixed patch header and C-quoted UTF-8 names', () => {
+    const spaced = 'diff --git a/my file.ts b/my file.ts\n--- a/my file.ts\t\n+++ b/my file.ts\t\n@@ -1 +1 @@\n-old\n+new\n';
+    const quoted = 'diff --git "a/uni-\\303\\251.ts" "b/uni-\\303\\251.ts"\n--- "a/uni-\\303\\251.ts"\t\n+++ "b/uni-\\303\\251.ts"\t\n@@ -1 +1 @@\n-old\n+new\n';
+    expect(parseUnifiedDiff(spaced)[0]).toMatchObject({ oldPath: 'my file.ts', newPath: 'my file.ts' });
+    expect(parseUnifiedDiff(quoted)[0]).toMatchObject({ oldPath: 'uni-é.ts', newPath: 'uni-é.ts' });
+  });
+  it('decodes quoted rename paths without treating their prefix as a filename', () => {
+    const renamed = 'diff --git "a/old\\tname.ts" "b/new\\tname.ts"\nrename from "old\\tname.ts"\nrename to "new\\tname.ts"\n--- "a/old\\tname.ts"\n+++ "b/new\\tname.ts"\n@@ -1 +1 @@\n-old\n+new\n';
+    expect(parseUnifiedDiff(renamed)[0]).toMatchObject({ oldPath: 'old\tname.ts', newPath: 'new\tname.ts', status: 'R' });
+  });
+  it('preserves literal non-BMP characters in a quoted Git path', () => {
+    const quoted = 'diff --git "a/emoji😀\\t.ts" "b/emoji😀\\t.ts"\n--- "a/emoji😀\\t.ts"\n+++ "b/emoji😀\\t.ts"\n@@ -1 +1 @@\n-old\n+new\n';
+    expect(parseUnifiedDiff(quoted)[0]).toMatchObject({ oldPath: 'emoji😀\t.ts', newPath: 'emoji😀\t.ts' });
+  });
   it('splits multiple files', () => {
     expect(parseUnifiedDiff(MODIFIED + RENAMED + ADDED)).toHaveLength(3);
   });

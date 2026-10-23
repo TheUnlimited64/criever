@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-test.beforeEach(async ({ request }) => { await request.post('http://127.0.0.1:4799/__reset'); });
+test.beforeEach(async ({ request }) => { await request.post('/__reset'); });
 
 test('toggling a markdown file to preview renders it, toggling back shows source rows', async ({ page }) => {
   await page.goto('/'); await expect(page.getByTestId('files/count')).toBeVisible();

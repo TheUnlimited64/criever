@@ -204,3 +204,21 @@ test('explains expired review sessions instead of mounting an empty review', asy
   await expect(page.getByRole('link', { name: /projects/i })).toBeVisible();
   await expect(page.getByTestId('header/overviewButton')).toHaveCount(0);
 });
+
+
+test('daemon session runs private AI chat and reviews from its checkout', async ({ page, request }) => {
+  const fixture = await (await request.get('/__fixture')).json();
+  const project = await (await request.post('/api/workspace/projects', { data: { path: fixture.path } })).json();
+  const session = await (await request.post(`/api/workspace/projects/${project.id}/prs/241/checkout`, { data: { confirmed: true } })).json();
+  await page.goto(session.url);
+  await page.getByRole('button', { name: 'AI', exact: true }).click();
+  await expect(page.getByLabel('AI harness')).toHaveValue('fixture');
+  await page.getByLabel('General question').fill('Explain this change');
+  await page.getByRole('button', { name: 'Ask AI', exact: true }).click();
+  await expect(page.getByTestId('ai-rail')).toContainText(`Private daemon answer from ${session.checkoutPath}`);
+  await page.getByRole('button', { name: 'Run AI review', exact: true }).click();
+  await expect(page.getByTestId('ai-rail')).toContainText('Review complete');
+  await page.reload();
+  await page.getByRole('button', { name: 'AI', exact: true }).click();
+  await expect(page.getByTestId('ai-rail')).toContainText('Private daemon answer');
+});

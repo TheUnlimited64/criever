@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-test.beforeEach(async ({ request }) => { await request.post('http://127.0.0.1:4799/__reset'); });
+test.beforeEach(async ({ request }) => { await request.post('/__reset'); });
 test('? opens keymap, Esc closes; ] [ switch files; v toggles viewed', async ({ page }) => {
   await page.goto('/'); await page.getByTestId('files/file/src%2Fdevices%2FDeviceList.tsx').click();
   await page.keyboard.press('Shift+?'); await expect(page.getByTestId('keymap')).toBeVisible();
@@ -44,7 +44,7 @@ test('. asks the server to open VS Code at the cursor line', async ({ page, requ
   await page.getByTestId('code/row/new/8/gutter').click(); await page.keyboard.press('Escape');
   const popup = page.waitForEvent('popup').catch(() => null);
   await page.keyboard.press('.'); await popup;
-  const opened = await (await request.get('http://127.0.0.1:4799/__vscode')).json();
+  const opened = await (await request.get('/__vscode')).json();
   expect(opened.at(-1)).toEqual({ path: 'src/devices/useDeviceRows.ts', line: 8 });
 });
 

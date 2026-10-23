@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-test.beforeEach(async ({ request }) => { await request.post('http://127.0.0.1:4799/__reset'); });
+test.beforeEach(async ({ request }) => { await request.post('/__reset'); });
 test('opens the first file as a unified diff with both gutters and coloured rows', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('files/file/src%2Fdevices%2FDeviceList.tsx').click();

@@ -1,14 +1,14 @@
 import { test, expect } from '@playwright/test';
 import type { CommentsResponse, PrInfo } from '@criever/shared';
 
-test.beforeEach(async ({ request }) => { await request.post('http://127.0.0.1:4799/__reset'); });
+test.beforeEach(async ({ request }) => { await request.post('/__reset'); });
 
 for (const provider of [
   { kind: 'github', name: 'GitHub', url: 'https://github.com/acme/catalog/pull/241' },
   { kind: 'bitbucket', name: 'Bitbucket', url: 'https://bitbucket.org/acme/catalog/pull-requests/241' },
 ] as const) {
   test(`${provider.name} repository identity and review actions`, async ({ page, request }) => {
-    const pr: PrInfo = await (await request.get('http://127.0.0.1:4799/api/pr')).json();
+    const pr: PrInfo = await (await request.get('/api/pr')).json();
     await page.route('**/api/pr', route => route.fulfill({ json: { ...pr, kind: provider.kind, url: provider.url } }));
     await page.goto('/');
     await expect(page.getByTestId('header/repo')).toHaveText('acme / catalog');
@@ -36,7 +36,7 @@ for (const provider of [
 }
 
 test('non-resolvable comments keep replies but reject resolve buttons and shortcuts', async ({ page, request }) => {
-  const comments: CommentsResponse = await (await request.get('http://127.0.0.1:4799/api/comments')).json();
+  const comments: CommentsResponse = await (await request.get('/api/comments')).json();
   await page.route('**/api/comments', route => route.fulfill({
     json: { ...comments, threads: comments.threads.map(thread => ({ ...thread, root: { ...thread.root, canResolve: false } })) },
   }));
@@ -61,7 +61,7 @@ test('non-resolvable comments keep replies but reject resolve buttons and shortc
 });
 
 test('read-only conversation comments expose no unsupported reply actions', async ({ page, request }) => {
-  const comments: CommentsResponse = await (await request.get('http://127.0.0.1:4799/api/comments')).json();
+  const comments: CommentsResponse = await (await request.get('/api/comments')).json();
   await page.route('**/api/comments', route => route.fulfill({
     json: { ...comments, threads: comments.threads.map(thread => ({ ...thread, root: { ...thread.root, canResolve: false, canReply: false } })) },
   }));

@@ -4,6 +4,11 @@ import { join } from 'node:path';
 import { UserError } from './errors';
 
 type Env = Record<string, string | undefined>;
+export type LegacyHarnessKind = 'claude' | 'codex' | 'opencode';
+export type HarnessKind = 'acp' | LegacyHarnessKind;
+export interface LegacyHarness { readonly id: string; readonly name: string; readonly kind: LegacyHarnessKind; readonly executable?: string }
+export interface AcpHarness { readonly id: string; readonly name: string; readonly kind: 'acp'; readonly executable: string; readonly args?: readonly string[] }
+export type Harness = LegacyHarness | AcpHarness;
 
 export function defaultPaths(env: Env) {
   const home = homedir();
@@ -31,4 +36,28 @@ export async function loadGithubCredentials(env: Env, configPath: string): Promi
     if (typeof j.github?.token === 'string' && j.github.token) return { token: j.github.token };
   } catch { /* fall through, like Bitbucket configuration */ }
   throw new UserError(`No GitHub credentials.\nProvide GITHUB_TOKEN or GH_TOKEN, or configure github.token in ${configPath}.`);
+}
+
+export async function loadHarnesses(configPath: string): Promise<readonly Harness[]> {
+  let raw: string;
+  try { raw = await readFile(configPath, 'utf8'); } catch (e) {
+    if (e instanceof Error && 'code' in e && e.code === 'ENOENT') return [];
+    throw e;
+  }
+  const value: unknown = JSON.parse(raw);
+  if (typeof value !== 'object' || value === null || !('harnesses' in value) || !Array.isArray(value.harnesses)) return [];
+  return value.harnesses.flatMap((item: unknown): Harness[] => {
+    if (typeof item !== 'object' || item === null) return [];
+    const candidate = item as Record<string, unknown>;
+    const { id, name, kind, executable, args } = candidate;
+    if (typeof id !== 'string' || !id || typeof name !== 'string' || !name) return [];
+    if (kind === 'acp') {
+      if (typeof executable !== 'string' || executable.length === 0) return [];
+      if (args !== undefined && (!Array.isArray(args) || args.some(item => typeof item !== 'string'))) return [];
+      return [{ id, name, kind, executable, ...(Array.isArray(args) ? { args } : {}) }];
+    }
+    if (kind !== 'claude' && kind !== 'codex' && kind !== 'opencode') return [];
+    if (executable !== undefined && (typeof executable !== 'string' || executable.length === 0)) return [];
+    return [{ id, name, kind, ...(typeof executable === 'string' ? { executable } : {}) }];
+  });
 }

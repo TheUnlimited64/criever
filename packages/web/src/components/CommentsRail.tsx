@@ -5,6 +5,9 @@ import { useComments, usePr } from '../hooks';
 import { useStore } from '../store';
 import { Avatar } from './ThreadCard';
 import { ThreadCardFull } from './ThreadCardFull';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../api';
+import { AiResultsList } from './AiResultsList';
 
 const first = (s: string) => emojify(s.split('\n')[0] ?? '');
 interface RowProps { t: Thread; pip: string; muted?: boolean; agentPip?: boolean; onSelect: (t: Thread) => void }
@@ -31,6 +34,10 @@ const Row = ({ t, pip, muted, agentPip, onSelect, drafts }: RowProps & { drafts:
 
 export function CommentsRail() {
   const c = useComments().data; const local = usePr().data?.kind === 'local'; const { openDiff, setFocusedThread } = useStore();
+  const ai = useQuery({ queryKey: ['ai'], queryFn: api.ai }).data;
+  const completedIds = new Set(ai?.reviewRuns?.map(run => run.id));
+  const activeReviews = ai?.activeReviews?.filter(run => !completedIds.has(run.id)) ?? [];
+  const aiCount = (ai?.findings.length ?? 0) + (ai?.lookouts.length ?? 0) + activeReviews.reduce((total, run) => total + run.findings.length + run.lookouts.length, 0);
   if (!c) return <aside className="pane rail" data-testid="comments" aria-label="Review comments"><div className="pane-hd">Comments</div><div className="empty" role="status">Loading comments…</div></aside>;
   // Resolved wins over authorship (a resolved thread always reads as resolved, no matter who wrote
   // it); among the rest, the agent group wins over "changed since" — the point of the group is to
@@ -50,6 +57,7 @@ export function CommentsRail() {
         <button key={d.id} className="item" title={first(d.body)} data-testid={`comments/draft/${d.id}`} onClick={() => goDraft(d)}><span className="pip draft" /><span><span className="loc">{d.path ? `${d.path.split('/').pop()}:${d.line}` : 'General comment'}{d.parentId ? ' · reply' : ''}</span><span className="txt">{first(d.body)}</span></span></button>))}
         {c.drafts.length === 0 && <p className="group-empty">No drafts. Select a code line to comment.</p>}
       </Group>
+      <Group id="ai" title="AI findings" n={aiCount}><AiResultsList activeReviews={activeReviews} runs={ai?.reviewRuns ?? []} findings={ai?.findings ?? []} lookouts={ai?.lookouts ?? []} /></Group>
       {local && <Group id="agent" title="From the agent" n={agent.length}>{agent.map(t => <Row onSelect={go} drafts={c.drafts} key={t.root.id} t={t} pip="agent" agentPip />)}</Group>}
       <Group id="changed" title={changedSinceHeading(changed)} n={changed.length}>{changed.map(t => <Row onSelect={go} drafts={c.drafts} key={t.root.id} t={t} pip="changed" />)}</Group>
       <Group id="open" title="Open" n={open.length}>{open.map(t => <Row onSelect={go} drafts={c.drafts} key={t.root.id} t={t} pip="open" />)}</Group>

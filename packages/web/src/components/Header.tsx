@@ -13,7 +13,7 @@ export interface ReviewHeaderContext {
 export function Header({ context }: { context?: ReviewHeaderContext }) {
   const review = usePr(); const pr = review.data; const comments = useComments().data;
   const drafts = comments?.drafts.length ?? 0; const files = useFiles().data ?? [];
-  const { setOverlay, range, setRange, activePanel, setActivePanel } = useStore(); const invalidate = useInvalidate();
+  const { setOverlay, range, setRange, activePanel, setActivePanel, aiOpen, setAiOpen } = useStore(); const invalidate = useInvalidate();
   const readOnly = useRangeReadOnly();
   if (!pr) return <header className="hdr" data-testid="header">{context?.navigation}<div className="workspace-bar">{!context && <strong className="brand">Criever</strong>}<span role="status">{review.error ? 'Review could not load' : 'Loading review workspace…'}</span></div>{context?.notices}</header>;
   const local = pr.kind === 'local';
@@ -55,10 +55,11 @@ export function Header({ context }: { context?: ReviewHeaderContext }) {
           {pr.localBehind > 0 && <span className="chip grey" data-testid="header/localBehind">checkout behind head by {pr.localBehind}</span>}
         </div>
         <nav className="review-tools" aria-label="Review tools">
-          <button className="btn sm ghost" onClick={() => setOverlay('palette')}>Go to file <kbd>{shortcutLabel('K')}</kbd></button>
+          <button className="btn sm ghost" aria-label="Choose file" onClick={() => { setAiOpen(false); setOverlay('palette'); }}>Go to file <kbd>{shortcutLabel('K')}</kbd></button>
           <button className="btn sm ghost" onClick={() => setOverlay('search')}>Search</button>
           <button className="btn sm ghost" onClick={() => { setActivePanel('code'); setOverlay('find'); }}>Find in file</button>
           <button className="btn sm ghost" onClick={() => setOverlay('keys')}>Shortcuts <kbd>?</kbd></button>
+          <button className={`btn sm${aiOpen ? ' on' : ' ghost'}`} aria-label="AI" aria-pressed={aiOpen} onClick={() => setAiOpen(!aiOpen)}>AI</button>
         </nav>
       </div>
       {context?.notices}

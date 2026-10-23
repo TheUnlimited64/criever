@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
-import { loadCredentials, loadGithubCredentials, defaultPaths } from '../src/config';
+import { loadCredentials, loadGithubCredentials, loadHarnesses, defaultPaths } from '../src/config';
 
 describe('loadCredentials', () => {
   it('prefers env', async () => {
@@ -44,5 +44,31 @@ describe('defaultPaths', () => {
   it('honours overrides', () => {
     const p = defaultPaths({ CRIEVER_STATE_DIR: '/s', CRIEVER_CACHE_DIR: '/c', XDG_CONFIG_HOME: '/x' });
     expect(p).toEqual({ configPath: '/x/criever/config.json', stateDir: '/s', cacheDir: '/c' });
+  });
+});
+
+describe('loadHarnesses', () => {
+  it('loads configured adapter mapping without arbitrary args', async () => {
+    const p = join(mkdtempSync(join(tmpdir(), 'cfg-ai-')), 'config.json');
+    writeFileSync(p, JSON.stringify({ harnesses: [{ id: 'reviewer', name: 'Reviewer', kind: 'codex', executable: '/usr/bin/codex', args: ['unsafe'] }] }));
+    expect(await loadHarnesses(p)).toEqual([{ id: 'reviewer', name: 'Reviewer', kind: 'codex', executable: '/usr/bin/codex' }]);
+  });
+
+  it('loads ACP executable arguments', async () => {
+    const p = join(mkdtempSync(join(tmpdir(), 'cfg-acp-')), 'config.json');
+    writeFileSync(p, JSON.stringify({ harnesses: [{ id: 'gemini', name: 'Gemini', kind: 'acp', executable: 'gemini', args: ['--experimental-acp'] }] }));
+    expect(await loadHarnesses(p)).toEqual([{ id: 'gemini', name: 'Gemini', kind: 'acp', executable: 'gemini', args: ['--experimental-acp'] }]);
+  });
+
+  it('rejects ACP entries without an executable or with invalid arguments', async () => {
+    const p = join(mkdtempSync(join(tmpdir(), 'cfg-acp-invalid-')), 'config.json');
+    writeFileSync(p, JSON.stringify({
+      harnesses: [
+        { id: 'missing', name: 'Missing', kind: 'acp' },
+        { id: 'invalid', name: 'Invalid', kind: 'acp', executable: 'agent', args: ['ok', 1] },
+        { id: 'valid', name: 'Valid', kind: 'acp', executable: 'agent' },
+      ],
+    }));
+    expect(await loadHarnesses(p)).toEqual([{ id: 'valid', name: 'Valid', kind: 'acp', executable: 'agent' }]);
   });
 });

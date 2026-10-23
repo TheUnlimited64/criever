@@ -40,6 +40,20 @@ describe('StateStore', () => {
     expect(j.viewed).toEqual({ 'a.ts': 'abc' });
     expect(j.lastSeenHead).toBe('def');
   });
+
+  it('persists private AI conversations, findings, and approval-gated drafts per review', async () => {
+    const s = new StateStore(file); await s.load();
+    await s.saveAiConversation([{ role: 'user', content: 'Why this line?' }]);
+    await s.saveAiFindings([{ id: 'finding-1', path: 'a.ts', line: 3, side: 'new', body: 'Potential issue', severity: 'warning', anchorCommit: 'head' }]);
+    const conversation = await s.loadAiConversation();
+    const findings = await s.loadAiFindings();
+    expect(conversation).toEqual([{ role: 'user', content: 'Why this line?' }]);
+    expect(findings).toHaveLength(1);
+    expect(s.state.drafts).toEqual([]);
+    const s2 = new StateStore(file); await s2.load();
+    expect(await s2.loadAiConversation()).toEqual(conversation);
+    expect(await s2.loadAiFindings()).toEqual(findings);
+  });
   it('serializes concurrent saves without losing the temp file', async () => {
     const s = new StateStore(file); await s.load();
     await Promise.all([
@@ -53,6 +67,59 @@ describe('StateStore', () => {
     expect(s2.state.viewed).toEqual({ 'a.ts': 'h' });
     expect(s2.state.lastSeenHead).toBe('h');
     expect(existsSync(file + '.tmp')).toBe(false);
+  });
+
+  it('rolls back an AI mutation when the atomic write fails', async () => {
+    const s = new StateStore(file); await s.load();
+    await s.saveAiFindings([{ id: 'existing', path: 'a.ts', line: 1, side: 'new', body: 'existing', severity: 'info', anchorCommit: 'head' }]);
+    const before = structuredClone(s.state);
+    const storeWithWrite = s as unknown as { writeNow: () => Promise<void> };
+    const originalWrite = storeWithWrite.writeNow;
+    storeWithWrite.writeNow = async () => { throw new Error('disk full'); };
+    try {
+      await expect(s.completeAiReview({ id: 'run', head: 'head', findings: 1, lookouts: 0, first: null, harnessId: 'fake', completedAt: new Date().toISOString() }, [], [])).rejects.toThrow('disk full');
+      expect(s.state).toEqual(before);
+    } finally {
+      storeWithWrite.writeNow = originalWrite;
+    }
+  });
+
+  it('does not expose a completed review before its atomic write finishes', async () => {
+    const s = new StateStore(file); await s.load();
+    let releaseWrite = () => {};
+    let writeStarted = () => {};
+    const gate = new Promise<void>(resolve => { releaseWrite = resolve; });
+    const started = new Promise<void>(resolve => { writeStarted = resolve; });
+    Object.defineProperty(s, 'writeNow', { value: async () => { writeStarted(); await gate; } });
+    const saving = s.completeAiReview({ id: 'run', head: 'head', findings: 0, lookouts: 0, first: null, harnessId: 'fake', completedAt: new Date().toISOString() }, [], []);
+    try {
+      await started;
+      expect(s.loadAiReviewRuns()).toEqual([]);
+    } finally { releaseWrite(); }
+    await saving;
+    expect(s.loadAiReviewRuns()).toHaveLength(1);
+  });
+
+  it('keeps a draft added while review completion writes to disk', async () => {
+    const s = new StateStore(file); await s.load();
+    let releaseWrite = () => {};
+    let writeStarted = () => {};
+    const gate = new Promise<void>(resolve => { releaseWrite = resolve; });
+    const started = new Promise<void>(resolve => { writeStarted = resolve; });
+    Object.defineProperty(s, 'writeNow', { value: async (state: unknown) => {
+      writeStarted();
+      await gate;
+      await Reflect.apply(Reflect.get(Object.getPrototypeOf(s), 'writeNow'), s, [state]);
+    } });
+    const completing = s.completeAiReview({ id: 'run', head: 'head', findings: 0, lookouts: 0, first: null, harnessId: 'fake', completedAt: new Date().toISOString() }, [], []);
+    await started;
+    const adding = s.addDraft({ path: 'a.ts', line: 1, side: 'new', body: 'Keep this comment', anchorCommit: 'head' });
+    releaseWrite();
+    const [, draft] = await Promise.all([completing, adding]);
+    expect(s.state.drafts).toContainEqual(draft);
+    const reopened = new StateStore(file); await reopened.load();
+    expect(reopened.state.drafts).toContainEqual(draft);
+    expect(reopened.loadAiReviewRuns()).toHaveLength(1);
   });
 
   it('corrupt file → renamed to .bak, empty state, warning set', async () => {

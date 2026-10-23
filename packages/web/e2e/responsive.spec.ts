@@ -7,7 +7,7 @@ const hiddenCodeCases = [
 ] as const;
 
 test.beforeEach(async ({ request }) => {
-  await request.post('http://127.0.0.1:4799/__reset');
+  await request.post('/__reset');
 });
 
 for (const { width, panel } of hiddenCodeCases) {

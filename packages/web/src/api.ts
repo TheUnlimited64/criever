@@ -1,4 +1,7 @@
-import type { ChangedFile, CommentsResponse, DiffResponse, Draft, PrInfo, PublishResult, SearchHit, Side, TreeEntry, VscodeOpenResponse } from '@criever/shared';
+import type { AiActiveReview, AiFinding, AiLookout, AiMessage, AiReviewRun, AiReviewSummary, ChangedFile, CommentsResponse, DiffResponse, Draft, PrInfo, PublishResult, SearchHit, Side, TreeEntry, VscodeOpenResponse } from '@criever/shared';
+
+export type { AiFinding, AiLookout, AiMessage } from '@criever/shared';
+export interface AiState { harnesses: { id: string; name: string; kind: string }[]; conversation: AiMessage[]; threads: Record<string, AiMessage[]>; findings: AiFinding[]; lookouts: AiLookout[]; reviewResult: AiReviewSummary | null; reviewRuns: AiReviewRun[]; activeReviews: readonly AiActiveReview[]; approvedIds: readonly string[] }
 
 export const reviewSessionId = (() => {
   const match = window.location.pathname.match(/^\/review\/([^/]+)\/?$/);
@@ -13,7 +16,31 @@ async function j<T>(url: string, init?: RequestInit): Promise<T> {
 }
 const qs = (o: Record<string, string | number | null | undefined>) => new URLSearchParams(Object.entries(o).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)])).toString();
 
+interface ChatResult { answer: string; threadId: string; conversation: AiMessage[] }
+interface ChatJob extends Partial<ChatResult> { runId: string; status: 'running' | 'complete' | 'failed'; message: string; error?: string }
+async function aiChat(body: { harnessId: string; message: string; path?: string; line?: number; side?: Side; lookoutId?: string }, onProgress?: (message: string) => void): Promise<ChatResult> {
+  let job = await j<ChatJob | ChatResult>('/api/ai/chat', { method: 'POST', headers: { prefer: 'respond-async' }, body: JSON.stringify(body) });
+  if (!('runId' in job)) return job;
+  for (;;) {
+    onProgress?.(job.message);
+    if (job.status === 'failed') throw new Error(job.error ?? 'Private question failed');
+    if (job.status === 'complete') {
+      if (!job.answer || !job.threadId || !job.conversation) throw new Error('Private question returned an incomplete answer');
+      return { answer: job.answer, threadId: job.threadId, conversation: job.conversation };
+    }
+    await new Promise(resolve => setTimeout(resolve, 500));
+    job = await j<ChatJob>(`/api/ai/chat/${encodeURIComponent(job.runId)}`);
+  }
+}
+
 export const api = {
+  ai: () => j<AiState>('/api/ai'),
+  aiChat,
+  aiReview: (harnessId: string) => j<{ runId: string; status: 'starting' }>('/api/ai/review', { method: 'POST', body: JSON.stringify({ harnessId }) }),
+  aiReword: (id: string, harnessId: string) => j<{ body: string }>(`/api/ai/findings/${encodeURIComponent(id)}/reword`, { method: 'POST', body: JSON.stringify({ harnessId }) }),
+  aiUpdateFinding: (id: string, body: string) => j<{ finding: AiFinding }>(`/api/ai/findings/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
+  aiDeleteFinding: (id: string) => j<{ ok: true }>(`/api/ai/findings/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  aiApproveFinding: (id: string) => j<{ draft: Draft }>(`/api/ai/findings/${encodeURIComponent(id)}/approve`, { method: 'POST' }),
   pr: () => j<PrInfo>('/api/pr'),
   files: (o: { base?: string | null; head?: string | null } = {}) => j<ChangedFile[]>(`/api/files?${qs(o)}`),
   tree: (at?: string | null) => j<TreeEntry[]>(`/api/tree?${qs({ at })}`),

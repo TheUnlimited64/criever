@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-test.beforeEach(async ({ request }) => { await request.post('http://127.0.0.1:4799/__reset'); });
+test.beforeEach(async ({ request }) => { await request.post('/__reset'); });
 async function draft(page: import('@playwright/test').Page, file: string, line: number, text: string) {
   await page.getByTestId(`files/file/${file}`).click();
   await page.getByTestId(`code/row/new/${line}/gutter`).click();
@@ -15,7 +15,7 @@ test('publishes all drafts in order and clears them', async ({ page, request }) 
   await sheet.getByTestId('publishSheet/confirm').click();
   await expect(page.getByTestId('toast')).toContainText('Published 2');
   await expect(page.getByTestId('header/draftCount')).toContainText('0 drafts');
-  const rec = await (await request.get('http://127.0.0.1:4799/__stub/recorded')).json();
+  const rec = await (await request.get('/__stub/recorded')).json();
   expect(rec.map((r: { content: { raw: string } }) => r.content.raw)).toEqual(['first', 'second']);
   expect(rec[0].inline).toEqual({ path: 'src/devices/useDeviceRows.ts', to: 8 });
   // the published comments now show as threads authored by me
