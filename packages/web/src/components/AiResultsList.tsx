@@ -1,9 +1,17 @@
 import { AiResultBody } from './AiMessageView';
 import { useState } from 'react';
-import { AiLookoutCard } from './AiInline';
 import type { AiActiveReview, AiFinding, AiLookout, AiReviewRun, Side } from '@criever/shared';
 import { usePr } from '../hooks';
 import { useStore } from '../store';
+
+function LookoutPreview({ lookout, provisional = false, onSelect }: { lookout: AiLookout; provisional?: boolean; onSelect?: () => void }) {
+  const location = lookout.path ? `${lookout.path.split('/').pop()}${lookout.line ? `:${lookout.line}` : ''}` : 'Review context';
+  const excerpt = lookout.body.trim().split('\n').find(line => line.trim()) ?? '';
+  return <button type="button" className="item ai-lookout-preview" data-testid={`ai/result/${lookout.id}`} disabled={!onSelect} onClick={onSelect} aria-label={`Look at this: ${lookout.body}`} title={lookout.path ?? 'No code location recorded'}>
+    <span className="pip changed" aria-hidden="true" />
+    <span className="ai-lookout-preview-copy"><span className="loc">{provisional ? 'Provisional look-out' : 'Look-out'} · {location}</span><AiResultBody body={excerpt} interactive={false} /></span>
+  </button>;
+}
 
 export function AiResultsList({ runs, findings, lookouts, activeReviews = [] }: { runs: readonly AiReviewRun[]; findings: readonly AiFinding[]; lookouts: readonly AiLookout[]; activeReviews?: readonly AiActiveReview[] }) {
   const { openDiff, setAiOpen, setAiJump, setRange } = useStore();
@@ -29,7 +37,7 @@ export function AiResultsList({ runs, findings, lookouts, activeReviews = [] }: 
        <h3>{run.status === 'failed' ? 'Review failed' : run.status === 'incomplete' ? 'Review incomplete' : 'Review in progress'}<small>{run.harnessId} · provisional</small></h3>
        {!run.findings.length && !run.lookouts.length && <p className="ai-results-empty">{run.status === 'failed' || run.status === 'incomplete' ? 'No findings were posted before this review stopped.' : 'Waiting for provisional findings or look-outs.'}</p>}
        {run.findings.map(item => <button className="ai-result-item" data-testid={`ai/result/${item.id}`} key={item.id} onClick={() => jump(item.path, item.side, item.line, item.anchorCommit)} aria-label={`Finding: ${item.body}`}><span className="ai-result-meta">Provisional finding · {item.severity} · {item.path}:{item.line}</span><AiResultBody body={item.body} interactive={false} /></button>)}
-       {run.lookouts.map(item => item.path && item.side && item.line ? <button className="ai-result-item lookout" data-testid={`ai/result/${item.id}`} key={item.id} onClick={() => jump(item.path ?? '', item.side ?? 'new', item.line ?? 0, item.anchorCommit)} aria-label={`Look at this: ${item.body}`}><span className="ai-result-meta">Provisional look-out · {item.path}:{item.line}</span><AiResultBody body={item.body} interactive={false} /></button> : <div className="ai-result-item lookout" data-testid={`ai/result/${item.id}`} key={item.id}><span className="ai-result-meta">Provisional look-out</span><AiResultBody body={item.body} interactive={false} /></div>)}
+       {run.lookouts.map(item => <LookoutPreview key={item.id} lookout={item} provisional onSelect={item.path && item.side && item.line ? () => jump(item.path!, item.side!, item.line!, item.anchorCommit) : undefined} />)}
      </section>)}
     {groups.map((run, index) => {
       const matchedFindings = findings.filter(item => (item.reviewId ?? 'legacy') === run.id);
@@ -40,7 +48,7 @@ export function AiResultsList({ runs, findings, lookouts, activeReviews = [] }: 
         {matchedFindings.map(item => <button className="ai-result-item" data-testid={`ai/result/${item.id}`} key={item.id} onClick={() => jump(item.path, item.side, item.line, item.anchorCommit)} aria-label={`Finding: ${item.body}`}>
           <span className="ai-result-meta">Finding · {item.severity} · {item.path}:{item.line}</span><AiResultBody body={item.body} interactive={false} />
         </button>)}
-        {matchedLookouts.map(item => <AiLookoutCard key={item.id} lookout={item} onOpenCode={item.path && item.side && item.line ? () => jump(item.path!, item.side!, item.line!, item.anchorCommit) : undefined} />)}
+        {matchedLookouts.map(item => <LookoutPreview key={item.id} lookout={item} onSelect={item.path && item.side && item.line ? () => jump(item.path!, item.side!, item.line!, item.anchorCommit) : undefined} />)}
       </section>;
     })}
   </div>;

@@ -193,3 +193,10 @@ button.ai-lookout-location:hover { color: var(--accent); }
   .ai-guidance.lookout > .ai-result-body { font-size: 16px; }
   .ai-lookout-footer { align-items: flex-start; }
 }
+
+/* Match the comment overview: one compact, fully clickable row per look-out. */
+.ai-lookout-preview { margin: 4px 0; border-bottom: 1px solid var(--line); border-radius: 0; font-family: var(--font-ui); }
+.ai-lookout-preview-copy { min-width: 0; }
+.ai-lookout-preview .ai-result-body { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 4px; line-height: 1.5; }
+.ai-lookout-preview .ai-result-body :is(h1,h2,h3,h4,p) { margin: 0; font-size: 13px; line-height: 1.5; }
+.ai-lookout-preview:disabled { opacity: 1; cursor: default; }

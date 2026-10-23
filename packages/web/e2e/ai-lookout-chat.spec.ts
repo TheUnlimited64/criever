@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ request, baseURL }) => { await request.post(`${baseURL}/__reset`); });
 
-test('look-out discussions keep context, support follow-ups, and reopen from either surface', async ({ page, request }, testInfo) => {
+test('look-out discussions stay in the diff and reopen through compact side-panel previews', async ({ page, request }, testInfo) => {
   await page.goto('/');
   await page.getByTestId('files/file/src%2Fapi%2Fdevices.ts').click();
   await page.getByTestId('header').getByRole('button', { name: 'AI', exact: true }).click();
@@ -27,11 +27,25 @@ test('look-out discussions keep context, support follow-ups, and reopen from eit
   await page.getByTestId('header').getByRole('button', { name: 'AI', exact: true }).click();
   await page.getByRole('tab', { name: /Findings/ }).click();
   const rail = page.getByTestId('ai-rail');
-  await rail.getByRole('button', { name: 'Continue discussion' }).click();
-  await expect(rail.locator('.ai-lookout-discussion .ai-message.assistant')).toHaveCount(2);
-  await expect(rail.locator('.ai-lookout-discussion')).toContainText('How could I verify this concern?');
-  await rail.getByRole('button', { name: 'Close discussion' }).click();
-  await expect(rail.locator('.ai-lookout-discussion .ai-message')).toHaveCount(0);
+  await expect(rail.getByRole('button', { name: 'Continue discussion' })).toHaveCount(0);
+  await expect(rail.locator('.ai-lookout-discussion')).toHaveCount(0);
+  // Clicking the text itself (not just the file location) navigates to the diff.
+  await rail.locator('.ai-lookout-preview .ai-result-body').click();
+  await expect(rail).toBeHidden();
+  await expect(lookout).toBeInViewport();
+  await lookout.getByRole('button', { name: 'Continue discussion' }).click();
+  await expect(lookout.locator('.ai-message.assistant')).toHaveCount(2);
+  await expect(lookout).toContainText('How could I verify this concern?');
+  await lookout.getByRole('button', { name: 'Close discussion' }).click();
+  // The comments overview uses the same full-row navigation, including keyboard activation.
+  await page.getByTestId('files/file/package.json').click();
+  const comments = page.getByTestId('comments');
+  await expect(comments.locator('.ai-lookout-discussion')).toHaveCount(0);
+  const preview = comments.locator('.ai-lookout-preview');
+  await preview.focus();
+  await page.keyboard.press('Enter');
+  await expect(lookout).toBeInViewport();
+  await expect(page.getByTestId('code/row/new/3')).toHaveClass(/cursor/);
   const state = await request.get('/api/ai').then(response => response.json());
   expect(state.conversation).toEqual([]);
   expect(Object.keys(state.threads)).toHaveLength(1);
@@ -52,6 +66,10 @@ for (const theme of ['dark', 'light'] as const) {
     await page.getByTestId('files/file/src%2Fapi%2Fdevices.ts').click();
     const lookout = page.getByTestId(`ai/lookout/${lookoutId}`);
     await expect(lookout).toContainText('Confirm authorization');
+    const preview = page.getByTestId('comments').locator('.ai-lookout-preview');
+    await expect(preview).toContainText('Confirm authorization');
+    await expect(preview).not.toContainText('This handler returns devices');
+    await expect(page.getByTestId('comments').locator('.ai-lookout-discussion')).toHaveCount(0);
     await lookout.screenshot({ path: testInfo.outputPath(`lookout-${theme}.png`) });
     await lookout.getByRole('button', { name: 'Discuss look-out' }).click();
     await expect(lookout.getByRole('textbox', { name: 'Look-out question', exact: true })).toBeVisible();
