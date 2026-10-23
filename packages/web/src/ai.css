@@ -117,7 +117,7 @@
 .ai-guidance { white-space: pre-wrap; overflow-wrap: anywhere; }
 .ai-message { overflow-wrap: anywhere; }
 .ai-guidance { margin: 6px 0; border: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: transparent; border-radius: 0; padding: 9px 0; font-size: 12px; }
-.ai-guidance.lookout { border-color: var(--amber); background: var(--amber-bg); padding-inline: 8px; }
+
 .ai-guidance p { margin: 5px 0; }
 .ai-actions { display: flex; flex-wrap: wrap; gap: 4px; }
 .ai-error { color: var(--del); padding: 0 12px; }
@@ -159,3 +159,37 @@
 .mdPreview.ai-result-body > :last-child { margin-bottom: 0; }
 .mdPreview.ai-result-body pre { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mdPreview.ai-result-body a { color: var(--accent); }
+
+/* Look-outs are review notes: amber identifies the type, prose uses a neutral surface. */
+.ai-guidance.lookout { width: 100%; max-width: 760px; margin: 8px 0; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); white-space: normal; font: 14px/1.6 var(--font-ui); }
+.diff .ai-guidance.lookout { width: min(760px, calc(100cqw - 72px)); }
+.ai-lookout-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.ai-lookout-label { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 5px; background: var(--amber-bg); color: var(--amber); font-size: 12px; font-weight: 500; }
+.ai-lookout-context { color: var(--ink-3); font-size: 12px; }
+.ai-lookout-location { display: block; width: 100%; margin-bottom: 14px; color: var(--ink-3); font: 11px/1.6 var(--font-code); text-align: left; overflow-wrap: anywhere; }
+button.ai-lookout-location:hover { color: var(--accent); }
+.ai-guidance.lookout > .ai-result-body { font: 14px/1.65 var(--font-ui); color: var(--ink-2); }
+.ai-guidance.lookout > .ai-result-body > :first-child { color: var(--ink); }
+.ai-guidance.lookout > .ai-result-body > p:first-child > strong:only-child { display: block; font-size: 16px; font-weight: 600; line-height: 1.4; }
+.ai-guidance.lookout .ai-result-body :is(h1,h2,h3,h4) { font-size: 16px; line-height: 1.4; color: var(--ink); margin: 0 0 12px; }
+.ai-guidance.lookout .ai-result-body code { font-size: .88em; padding: 1px 4px; border-radius: 4px; background: var(--panel-2); color: var(--ink); }
+.ai-lookout-footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; margin-top: 18px; }
+.ai-lookout-footer > span { color: var(--ink-3); font-size: 12px; }
+.ai-lookout-toggle.btn { font: 500 12px/1.4 var(--font-ui); min-height: 34px; border-color: var(--line-strong); background: var(--panel); color: var(--ink); }
+.ai-lookout-toggle.btn:hover { background: var(--panel-2); }
+.ai-lookout-toggle[aria-expanded="true"] { color: var(--ink-2); }
+.ai-guidance.lookout .ai-lookout-discussion .ai-lookout-chat { width: 100%; max-width: 100%; padding: 16px 0 0; margin: 16px 0 0; border-top: 1px solid var(--line); border-bottom: 0; background: transparent; }
+.ai-lookout-chat-heading { display: grid; gap: 3px; margin-bottom: 10px; }
+.ai-lookout-chat-heading strong { color: var(--ink); font-size: 14px; }
+.ai-lookout-chat-heading span { color: var(--ink-3); font-size: 12px; }
+.ai-lookout-chat .ai-question.follow-up { grid-template-columns: minmax(0, 1fr) auto; align-items: end; padding-bottom: 0; }
+.ai-lookout-chat .ai-question-label, .ai-lookout-chat .ai-question > :is(p, [role="status"]) { grid-column: 1 / -1; }
+.ai-lookout-chat .ai-question-harness { max-width: 100%; }
+.ai-lookout-chat .ai-question-harness select { min-width: 0; width: 100%; }
+.ai-lookout-chat .ai-submit { background: var(--accent); border-color: transparent; color: var(--on-accent); }
+.ai-lookout-chat .ai-submit:hover { background: var(--accent); filter: brightness(.95); }
+@media (max-width: 759px) {
+  .diff .ai-guidance.lookout { width: calc(100cqw - 16px); padding: 16px; }
+  .ai-guidance.lookout > .ai-result-body { font-size: 16px; }
+  .ai-lookout-footer { align-items: flex-start; }
+}

@@ -1,6 +1,6 @@
 import { AiResultBody } from './AiMessageView';
-import { Fragment, useState } from 'react';
-import { AiLookoutDiscussion } from './AiInline';
+import { useState } from 'react';
+import { AiLookoutCard } from './AiInline';
 import type { AiActiveReview, AiFinding, AiLookout, AiReviewRun, Side } from '@criever/shared';
 import { usePr } from '../hooks';
 import { useStore } from '../store';
@@ -40,9 +40,7 @@ export function AiResultsList({ runs, findings, lookouts, activeReviews = [] }: 
         {matchedFindings.map(item => <button className="ai-result-item" data-testid={`ai/result/${item.id}`} key={item.id} onClick={() => jump(item.path, item.side, item.line, item.anchorCommit)} aria-label={`Finding: ${item.body}`}>
           <span className="ai-result-meta">Finding · {item.severity} · {item.path}:{item.line}</span><AiResultBody body={item.body} interactive={false} />
         </button>)}
-        {matchedLookouts.map(item => <Fragment key={item.id}>{item.path && item.side && item.line ? <button className="ai-result-item lookout" data-testid={`ai/result/${item.id}`} key={item.id} onClick={() => { if (item.path && item.side && item.line) jump(item.path, item.side, item.line, item.anchorCommit); }} aria-label={`Look at this: ${item.body}`}>
-          <span className="ai-result-meta">Look at this · {item.path}:{item.line}</span><AiResultBody body={item.body} interactive={false} />
-        </button> : <div className="ai-result-item lookout" data-testid={`ai/result/${item.id}`} key={item.id}><span className="ai-result-meta">Look at this</span><AiResultBody body={item.body} interactive={false} /></div>}<AiLookoutDiscussion lookout={item} /></Fragment>)}
+        {matchedLookouts.map(item => <AiLookoutCard key={item.id} lookout={item} onOpenCode={item.path && item.side && item.line ? () => jump(item.path!, item.side!, item.line!, item.anchorCommit) : undefined} />)}
       </section>;
     })}
   </div>;

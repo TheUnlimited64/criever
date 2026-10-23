@@ -37,3 +37,32 @@ test('look-out discussions keep context, support follow-ups, and reopen from eit
   expect(Object.keys(state.threads)).toHaveLength(1);
   expect(Object.keys(state.threads)[0]).toMatch(/^lookout:/);
 });
+
+for (const theme of ['dark', 'light'] as const) {
+  test(`look-out design stays readable in ${theme} mode and on a phone`, async ({ page, request }, testInfo) => {
+    await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
+    await request.post('/api/ai/review', { data: { harnessId: 'fixture-harness' } });
+    await expect.poll(async () => (await request.get('/api/ai').then(r => r.json())).lookouts.length).toBe(1);
+    const state = await request.get('/api/ai').then(r => r.json());
+    const lookoutId = state.lookouts[0].id;
+    await request.patch(`/api/ai/lookouts/${encodeURIComponent(lookoutId)}`, { data: {
+      body: '**Confirm authorization before returning the device list**\n\nThis handler returns devices through `listDevices()`, but the change does not show where access is checked. If the route is reachable without authentication, device details could be exposed.\n\nCheck whether the router already applies an authorization guard. If it does, this concern can be dismissed; otherwise, add the check before returning the list.',
+    } });
+    await page.goto('/');
+    await page.getByTestId('files/file/src%2Fapi%2Fdevices.ts').click();
+    const lookout = page.getByTestId(`ai/lookout/${lookoutId}`);
+    await expect(lookout).toContainText('Confirm authorization');
+    await lookout.screenshot({ path: testInfo.outputPath(`lookout-${theme}.png`) });
+    await lookout.getByRole('button', { name: 'Discuss look-out' }).click();
+    await expect(lookout.getByRole('textbox', { name: 'Look-out question', exact: true })).toBeVisible();
+    await lookout.screenshot({ path: testInfo.outputPath(`discussion-${theme}.png`) });
+    await page.setViewportSize({ width: 375, height: 812 });
+    await lookout.scrollIntoViewIfNeeded();
+    const box = await lookout.boundingBox();
+    expect(box!.width).toBeLessThanOrEqual(375);
+    expect(await lookout.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await lookout.getByRole('button', { name: 'Send look-out question' }).scrollIntoViewIfNeeded();
+    await expect(lookout.getByRole('button', { name: 'Send look-out question' })).toBeInViewport();
+    await page.screenshot({ path: testInfo.outputPath(`lookout-${theme}-phone.png`) });
+  });
+}

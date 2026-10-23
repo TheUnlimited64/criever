@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { AiFinding, AiLookout, AiMessage, Side } from '@criever/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
@@ -38,21 +38,28 @@ export function AiFindingCard({ finding, harnessId, onChange }: { finding: AiFin
   </article>;
 }
 
-export function AiLookoutCard({ lookout }: { lookout: AiLookout }) {
-  return <article className="ai-guidance lookout" data-testid={`ai/lookout/${lookout.id}`}>
-    <span>{lookout.path ? `Look at this · ${lookout.path}:${lookout.line ?? '—'}` : 'Look at this'}</span><AiResultBody body={lookout.body} />
+export function AiLookoutCard({ lookout, onOpenCode }: { lookout: AiLookout; onOpenCode?: () => void }) {
+  const location = lookout.path ? `${lookout.path}${lookout.line ? `:${lookout.line}` : ''}` : null;
+  return <article className="ai-guidance lookout" data-testid={onOpenCode ? `ai/result/${lookout.id}` : `ai/lookout/${lookout.id}`}>
+    <header className="ai-lookout-header">
+      <span className="ai-lookout-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>Look-out</span>
+      <span className="ai-lookout-context">Worth checking</span>
+    </header>
+    {location && (onOpenCode ? <button type="button" className="ai-lookout-location" onClick={onOpenCode} aria-label={`Look at this: ${lookout.body}`}>{location}<span aria-hidden="true"> ↗</span></button> : <div className="ai-lookout-location">{location}</div>)}
+    <AiResultBody body={lookout.body} />
     <AiLookoutDiscussion lookout={lookout} />
   </article>;
 }
 
 export function AiLookoutDiscussion({ lookout }: { lookout: AiLookout }) {
   const [open, setOpen] = useState(false);
+  const discussionId = useId();
   const ai = useQuery({ queryKey: ['ai'], queryFn: api.ai });
   const messages = ai.data?.threads[`lookout:${encodeURIComponent(lookout.id)}`] ?? [];
   return <div className="ai-lookout-discussion" data-testid={`ai/lookout-discussion/${lookout.id}`}>
-    <button type="button" className="btn sm ghost" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? 'Close discussion' : messages.length ? 'Continue discussion' : 'Discuss look-out'}</button>
-    {open && <section className="ai-thread-inline" aria-label="Private look-out discussion">
-      <strong>Private discussion</strong>
+    <div className="ai-lookout-footer"><span>Private · only you</span><button type="button" className="btn sm ai-lookout-toggle" aria-expanded={open} aria-controls={discussionId} onClick={() => setOpen(value => !value)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{open ? <path d="m6 6 12 12M6 18 18 6" /> : <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H5l-3 3V11.5A7.5 7.5 0 0 1 9.5 4h3a7.5 7.5 0 0 1 7.5 7.5Z" />}</svg>{open ? 'Close discussion' : messages.length ? 'Continue discussion' : 'Discuss look-out'}</button></div>
+    {open && <section id={discussionId} className="ai-thread-inline ai-lookout-chat" aria-label="Private look-out discussion">
+      <div className="ai-lookout-chat-heading"><strong>Let’s unpack this</strong><span>Ask for an example or what to check next.</span></div>
       {messages.map((message, index) => <AiMessageView message={message} key={`${message.role}-${index}`} />)}
       <AiQuestionComposer target={{ lookoutId: lookout.id }} followUp initialQuestion={messages.length ? '' : 'Can you explain this look-out in simpler terms, with an example?'} onCancel={() => setOpen(false)} onSent={() => {}} />
     </section>}
